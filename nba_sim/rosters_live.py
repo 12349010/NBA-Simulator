@@ -62,7 +62,9 @@ df = pd.read_html(str(table), flavor="lxml")[0]    # ← force lxml parser
             df["GS"] = pd.to_numeric(df["GS"], errors="coerce").fillna(0)
             df = df.sort_values("GS", ascending=False)
 
-        name_col = "Player" if "Player" in df.columns else next(c for c in df.columns if "Player" in c)
+        name_col = "Player" if "Player" in df.columns else next(
+            c for c in df.columns if "Player" in c
+        )
 
     starters = [_fix(p) for p in df.head(5)[name_col].tolist()]
     bench    = [_fix(p) for p in df[name_col].tolist() if p not in starters]
