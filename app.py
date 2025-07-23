@@ -70,16 +70,15 @@ if st.button("▶️ Simulate"):
     # big centred score banner
     avg_h,avg_a=np.mean(res_home),np.mean(res_away)
     st.markdown(
-        f"<h2 style='text-align:center;'>"
-        f"{cfg['home_team']} {avg_h:.1f}  –  {avg_a:.1f} {cfg['away_team']}"
+        f"<h2 style='text-align:center;margin-top:0'>"
+        f"{cfg['home_team']} {avg_h:=.0f} – {avg_a:=.0f} {cfg['away_team']}"
         f"</h2>",
-        unsafe_allow_html=True
-    )
+        unsafe_allow_html=True)
 
     colh,cola=st.columns(2)
     with colh:
-        st.subheader(f"{cfg['home_team']} Box Score (avg)")
-        st.dataframe(box_h,use_container_width=True)
+        st.subheader(f"{cfg['home_team']} Box (avg)")
+        st.dataframe(box_h.round(0).astype(int),use_container_width=True)
     with cola:
-        st.subheader(f"{cfg['away_team']} Box Score (avg)")
-        st.dataframe(box_a,use_container_width=True)
+        st.subheader(f"{cfg['away_team']} Box (avg)")
+        st.dataframe(box_a.round(0).astype(int),use_container_width=True)
