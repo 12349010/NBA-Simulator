@@ -1,4 +1,4 @@
-import random
+import random, copy
 import nba_sim.data_acquisition as da
 from nba_sim.team_model      import Team
 from nba_sim.player_model    import Player
@@ -10,9 +10,10 @@ SIM_WEIGHTS = W.load()
 def _build_team(name, starters, backups, coach, season, is_home):
     roster = starters + backups
     ages = {n: 20 + len(da.get_player_season_avgs(da.slugify(n), season)) for n in roster}
-    players = [Player(n, ages[n], season) for n in roster if not Player(n, ages[n], season).injured]
+    players = [Player(n, ages[n], season) for n in roster]
+    players = [p for p in players if p.minutes_cap > 0]   # skip 'Out'
     return Team(name, players, da.get_coach_profile(coach), is_home)
-
+    
 def play_game(cfg: dict):
     random.seed()                 # new seed each call
     state = {"minute": 0}
