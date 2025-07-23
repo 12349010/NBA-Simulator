@@ -1,11 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Dynamic NBA rosters + head coach (UTF‑8 safe)
----------------------------------------------
-
-get_team_list()  ->  list[ str ]
-get_roster(team) ->  {"starters":[...], "bench":[...]}
-get_coach(team)  ->  "Head Coach Name"
+Dynamic NBA rosters *and* head coach (UTF‑8 safe)
 """
 import json, time, re
 from datetime import datetime
@@ -14,52 +9,24 @@ from pathlib import Path
 from typing import Dict, List
 
 import pandas as pd
-from unidecode import unidecode
-
 from .utils.scraping import soup
 
-# ------------------------------------------------------------------
-# Full map of team long‑names to Basketball‑Reference abbreviations
-# ------------------------------------------------------------------
 TEAM_ABR: Dict[str, str] = {
-    "Atlanta Hawks": "ATL",
-    "Boston Celtics": "BOS",
-    "Brooklyn Nets": "BRK",
-    "Charlotte Hornets": "CHO",
-    "Chicago Bulls": "CHI",
-    "Cleveland Cavaliers": "CLE",
-    "Dallas Mavericks": "DAL",
-    "Denver Nuggets": "DEN",
-    "Detroit Pistons": "DET",
-    "Golden State Warriors": "GSW",
-    "Houston Rockets": "HOU",
-    "Indiana Pacers": "IND",
-    "Los Angeles Clippers": "LAC",
-    "Los Angeles Lakers": "LAL",
-    "Memphis Grizzlies": "MEM",
-    "Miami Heat": "MIA",
-    "Milwaukee Bucks": "MIL",
-    "Minnesota Timberwolves": "MIN",
-    "New Orleans Pelicans": "NOP",
-    "New York Knicks": "NYK",
-    "Oklahoma City Thunder": "OKC",
-    "Orlando Magic": "ORL",
-    "Philadelphia 76ers": "PHI",
-    "Phoenix Suns": "PHO",
-    "Portland Trail Blazers": "POR",
-    "Sacramento Kings": "SAC",
-    "San Antonio Spurs": "SAS",
-    "Toronto Raptors": "TOR",
-    "Utah Jazz": "UTA",
-    "Washington Wizards": "WAS",
+    "Atlanta Hawks": "ATL", "Boston Celtics": "BOS", "Brooklyn Nets": "BRK",
+    "Charlotte Hornets": "CHO", "Chicago Bulls": "CHI", "Cleveland Cavaliers": "CLE",
+    "Dallas Mavericks": "DAL", "Denver Nuggets": "DEN", "Detroit Pistons": "DET",
+    "Golden State Warriors": "GSW", "Houston Rockets": "HOU", "Indiana Pacers": "IND",
+    "Los Angeles Clippers": "LAC", "Los Angeles Lakers": "LAL", "Memphis Grizzlies": "MEM",
+    "Miami Heat": "MIA", "Milwaukee Bucks": "MIL", "Minnesota Timberwolves": "MIN",
+    "New Orleans Pelicans": "NOP", "New York Knicks": "NYK", "Oklahoma City Thunder": "OKC",
+    "Orlando Magic": "ORL", "Philadelphia 76ers": "PHI", "Phoenix Suns": "PHO",
+    "Portland Trail Blazers": "POR", "Sacramento Kings": "SAC", "San Antonio Spurs": "SAS",
+    "Toronto Raptors": "TOR", "Utah Jazz": "UTA", "Washington Wizards": "WAS",
 }
 
 CACHE_FILE = Path(__file__).with_name("roster_cache.json")
 CACHE_TTL  = 12 * 60 * 60  # 12 h
 
-# ------------------------------------------------------------------
-# Helpers
-# ------------------------------------------------------------------
 def _season_year() -> int:
     today = datetime.now()
     return today.year + (1 if today.month >= 7 else 0)
@@ -72,8 +39,7 @@ def _load_cache() -> Dict[str, Dict]:
 def _save_cache(d: Dict[str, Dict]) -> None:
     CACHE_FILE.write_text(json.dumps(d))
 
-def _fix_mojibake(text: str) -> str:
-    """Repair common UTF‑8→latin‑1 mojibake patterns."""
+def _fix(text: str) -> str:          # repair mojibake
     if "Ã" in text or "Å" in text:
         try:
             return text.encode("latin1").decode("utf-8")
@@ -83,13 +49,10 @@ def _fix_mojibake(text: str) -> str:
 
 @lru_cache(maxsize=None)
 def _team_html(team: str):
-    abr = TEAM_ABR[team]
-    url = f"https://www.basketball-reference.com/teams/{abr}/{_season_year()}.html"
+    url = f"https://www.basketball-reference.com/teams/{TEAM_ABR[team]}/{_season_year()}.html"
     return soup(url, ttl_hours=CACHE_TTL // 3600)
 
-# ------------------------------------------------------------------
-# Public API
-# ------------------------------------------------------------------
+# ---------- public ----------
 def get_team_list() -> List[str]:
     return sorted(TEAM_ABR.keys())
 
@@ -99,32 +62,28 @@ def get_roster(team: str) -> Dict[str, List[str]]:
     if team in cache:
         return cache[team]
 
-    html = _team_html(team)
-    table = html.select_one("#roster")
-    df = pd.read_html(str(table))[0]
-
+    df = pd.read_html(str(_team_html(team).select_one("#roster")))[0]
     name_col = "Player" if "Player" in df.columns else next(c for c in df.columns if "Player" in c)
-
-    # Sort by Games Started if that column exists
     if "GS" in df.columns:
         df["GS"] = pd.to_numeric(df["GS"], errors="coerce").fillna(0)
         df = df.sort_values("GS", ascending=False)
 
-    starters = [_fix_mojibake(p) for p in df.head(5)[name_col].tolist()]
-    bench    = [_fix_mojibake(p) for p in df[name_col].tolist() if p not in starters]
-
-    roster = {"starters": starters, "bench": bench}
-    cache[team] = roster
+    starters = [_fix(p) for p in df.head(5)[name_col].tolist()]
+    bench    = [_fix(p) for p in df[name_col].tolist() if p not in starters]
+    out = {"starters": starters, "bench": bench}
+    cache[team] = out
     _save_cache(cache)
-    return roster
+    return out
 
 @lru_cache(maxsize=None)
 def get_coach(team: str) -> str:
-    """Scrape head‑coach name from the #meta div."""
+    """
+    B‑Ref formats:  <p><strong>Coach:</strong> Steve Kerr (65‑17)</p>
+    """
     html = _team_html(team)
-    meta = html.select_one("#meta")
-    if meta:
-        strong = meta.find("strong", string=re.compile(r"Coach", re.I))
-        if strong and strong.find_next("a"):
-            return _fix_mojibake(strong.find_next("a").get_text(strip=True))
+    tag = html.find("p", text=re.compile(r"Coach:", re.I))
+    if tag:
+        name = re.sub(r"Coach:\s*", "", tag.get_text())
+        name = re.sub(r"\s*\([\d\-]+\).*", "", name)  # strip record
+        return _fix(name.strip())
     return "Unknown"
