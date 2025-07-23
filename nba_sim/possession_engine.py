@@ -1,12 +1,12 @@
 import random, numpy as np
 from nba_sim.team_stats_live import get_team_defense
 from nba_sim.schedule_json import get_team_schedule
+import pandas as pd, datetime as dt
 
 def played_yesterday(team: str, game_date: str) -> bool:
     sched = get_team_schedule(team)
     if sched.empty:
         return False
-    import pandas as pd, datetime as dt
     gd = pd.to_datetime(game_date).date()
     return (gd - dt.timedelta(days=1)) in sched["startDate"].dt.date.values
 
