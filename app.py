@@ -1,7 +1,8 @@
 ############################################
 # app.py – one-file NBA game simulator GUI #
 ############################################
-import streamlit as st, requests, random, time, math
+import streamlit as st, json
+from main import play_game   # ← now uses full engine
 import pandas as pd, numpy as np
 from bs4 import BeautifulSoup
 
