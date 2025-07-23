@@ -6,6 +6,7 @@ get_team_list()  ->  list[ str ]
 get_roster(team) ->  {"starters":[...], "bench":[...]}
 """
 import json, time, re
+import datetime as dt
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
