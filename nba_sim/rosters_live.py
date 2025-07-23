@@ -46,8 +46,8 @@ def _fix(text: str) -> str:            # repair mojibake
     return text
 
 @lru_cache(maxsize=None)
-def _team_html(team: str):
-    url = f"https://www.basketball-reference.com/teams/{TEAM_ABR[team]}/{_season_year()}.html"
+def _team_html(team: str, season: int) -> BeautifulSoup:
+    url = f"https://www.basketball-reference.com/teams/{TEAM_ABR[team]}/{season}.html"
     return soup(url, ttl_hours=CACHE_TTL // 3600)
 
 def get_team_list() -> List[str]:
