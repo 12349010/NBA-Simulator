@@ -27,7 +27,7 @@ def get_team_defense(team:str, season:int|None=None)->dict:
     abr=TEAM_ABR[team]
     url=f"https://www.basketball-reference.com/teams/{abr}/{season}.html"
     html=soup(url, ttl_hours=TTL//3600)
-    misc = pd.read_html(str(html.select_one("#team_misc")))[0]
+    misc = pd.read_html(str(html.select_one("#team_misc")), flavor="lxml")[0]
     row  = misc.iloc[0]
     drtg = float(row["DRtg"])
     oppefg = float(row["Opp eFG%"])
