@@ -30,8 +30,12 @@ TEAM_ABR: Dict[str, str] = {
 CACHE_FILE = Path(__file__).with_name("roster_cache.json")
 CACHE_TTL  = 12 * 60 * 60
 
-def _season_year() -> int:
-    today = datetime.now()
+def _season_year(d: dt.date | None = None) -> int:
+    """
+    Return NBA season year given a date (defaults to today).
+    2025‑26 season ⇒ returns 2026.
+    """
+    today = d or dt.datetime.now().date()
     return today.year + (1 if today.month >= 7 else 0)
 
 def _fix(text: str) -> str:            # repair mojibake
