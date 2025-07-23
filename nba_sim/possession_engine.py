@@ -1,6 +1,6 @@
 import random, numpy as np
 from nba_sim.team_stats_live import get_team_defense
-from nba_sim.schedule_json import get_team_schedule
+from nba_sim.schedule_local import played_yesterday
 import pandas as pd, datetime as dt
 
 def played_yesterday(team: str, game_date: str) -> bool:
