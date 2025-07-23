@@ -7,11 +7,10 @@ get_roster(team) ->  {"starters":[...], "bench":[...]}
 """
 import json, time, re
 import datetime as dt
-from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
 from typing import Dict, List
-
+from bs4 import BeautifulSoup
 import pandas as pd
 from .utils.scraping import soup
 
