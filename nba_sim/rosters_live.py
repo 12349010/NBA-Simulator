@@ -1,16 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-Dynamic NBA rosters pulled from Basketball‑Reference
-====================================================
-
-Public helpers
-    get_team_list()  ->  list of 30 full team names
-    get_roster(team) ->  {"starters": [...5 names...], "bench": [...rest...]}
-
-Data are cached to roster_cache.json for 12 h.
+Dynamic NBA rosters & coach pulled from Basketball‑Reference
+------------------------------------------------------------
+get_team_list()  ->  list of 30 team names (alphabetical)
+get_roster(team) ->  {"starters":[...], "bench":[...]}
+get_coach(team)  ->  "Head Coach Name"
 """
-import json
-import time
+import json, time, re
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
@@ -20,43 +16,26 @@ import pandas as pd
 
 from .utils.scraping import soup
 
-# ---------------- Team → Abbreviation map -----------------
 TEAM_ABR: Dict[str, str] = {
-    "Atlanta Hawks": "ATL",
-    "Boston Celtics": "BOS",
-    "Brooklyn Nets": "BRK",
-    "Charlotte Hornets": "CHO",
-    "Chicago Bulls": "CHI",
-    "Cleveland Cavaliers": "CLE",
-    "Dallas Mavericks": "DAL",
-    "Denver Nuggets": "DEN",
-    "Detroit Pistons": "DET",
-    "Golden State Warriors": "GSW",
-    "Houston Rockets": "HOU",
-    "Indiana Pacers": "IND",
-    "Los Angeles Clippers": "LAC",
-    "Los Angeles Lakers": "LAL",
-    "Memphis Grizzlies": "MEM",
-    "Miami Heat": "MIA",
-    "Milwaukee Bucks": "MIL",
-    "Minnesota Timberwolves": "MIN",
-    "New Orleans Pelicans": "NOP",
-    "New York Knicks": "NYK",
-    "Oklahoma City Thunder": "OKC",
-    "Orlando Magic": "ORL",
-    "Philadelphia 76ers": "PHI",
-    "Phoenix Suns": "PHO",
-    "Portland Trail Blazers": "POR",
-    "Sacramento Kings": "SAC",
-    "San Antonio Spurs": "SAS",
-    "Toronto Raptors": "TOR",
-    "Utah Jazz": "UTA",
-    "Washington Wizards": "WAS",
+    "Atlanta Hawks": "ATL", "Boston Celtics": "BOS", "Brooklyn Nets": "BRK",
+    "Charlotte Hornets": "CHO", "Chicago Bulls": "CHI", "Cleveland Cavaliers": "CLE",
+    "Dallas Mavericks": "DAL", "Denver Nuggets": "DEN", "Detroit Pistons": "DET",
+    "Golden State Warriors": "GSW", "Houston Rockets": "HOU", "Indiana Pacers": "IND",
+    "Los Angeles Clippers": "LAC", "Los Angeles Lakers": "LAL", "Memphis Grizzlies": "MEM",
+    "Miami Heat": "MIA", "Milwaukee Bucks": "MIL", "Minnesota Timberwolves": "MIN",
+    "New Orleans Pelicans": "NOP", "New York Knicks": "NYK", "Oklahoma City Thunder": "OKC",
+    "Orlando Magic": "ORL", "Philadelphia 76ers": "PHI", "Phoenix Suns": "PHO",
+    "Portland Trail Blazers": "POR", "Sacramento Kings": "SAC", "San Antonio Spurs": "SAS",
+    "Toronto Raptors": "TOR", "Utah Jazz": "UTA", "Washington Wizards": "WAS",
 }
 
-# ---------------- Caching -----------------
 CACHE_FILE = Path(__file__).with_name("roster_cache.json")
-CACHE_TTL = 12 * 60 * 60  # 12 hours in seconds
+CACHE_TTL = 12 * 60 * 60  # 12 h
+
+
+def _now_season_year() -> int:
+    today = datetime.now()
+    return today.year + (1 if today.month >= 7 else 0)
 
 
 def _load_cache() -> Dict[str, Dict]:
@@ -65,33 +44,34 @@ def _load_cache() -> Dict[str, Dict]:
     return {}
 
 
-def _save_cache(cache: Dict[str, Dict]) -> None:
-    CACHE_FILE.write_text(json.dumps(cache))
+def _save_cache(d: Dict[str, Dict]) -> None:
+    CACHE_FILE.write_text(json.dumps(d))
 
 
-# ---------------- Public API -----------------
+# ---------- Public helpers ----------
 def get_team_list() -> List[str]:
     return sorted(TEAM_ABR.keys())
 
 
 @lru_cache(maxsize=None)
+def _get_team_page_html(team_name: str):
+    abr = TEAM_ABR[team_name]
+    url = f"https://www.basketball-reference.com/teams/{abr}/{_now_season_year()}.html"
+    return soup(url, ttl_hours=CACHE_TTL // 3600)
+
+
+@lru_cache(maxsize=None)
 def get_roster(team_name: str) -> Dict[str, List[str]]:
-    """Return starters & bench for the requested team."""
     cache = _load_cache()
     if team_name in cache:
         return cache[team_name]
 
-    abr = TEAM_ABR[team_name]
-    season_year = datetime.now().year + (1 if datetime.now().month >= 7 else 0)
-    url = f"https://www.basketball-reference.com/teams/{abr}/{season_year}.html"
-    html = soup(url, ttl_hours=CACHE_TTL // 3600)
+    html = _get_team_page_html(team_name)
     table = html.select_one("#roster")
-
     df = pd.read_html(str(table))[0]
-    # column that holds player names (depends on b‑ref HTML)
+
     name_col = "Player"
     if name_col not in df.columns:
-        # fallback: first column that contains 'Player'
         name_col = next(col for col in df.columns if "Player" in col)
 
     if "GS" in df.columns:
@@ -105,3 +85,12 @@ def get_roster(team_name: str) -> Dict[str, List[str]]:
     cache[team_name] = roster
     _save_cache(cache)
     return roster
+
+
+@lru_cache(maxsize=None)
+def get_coach(team_name: str) -> str:
+    html = _get_team_page_html(team_name)
+    coach_tag = html.find(string=re.compile(r"Coach:", re.I))
+    if coach_tag:
+        return coach_tag.parent.find_next("a").get_text(strip=True)
+    return "Unknown"
