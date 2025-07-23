@@ -55,27 +55,42 @@ def get_team_list() -> List[str]:
 
 @lru_cache(maxsize=None)
 def get_roster(team: str) -> Dict[str, List[str]]:
+    """
+    Return {"starters": [...], "bench": [...]}.
+    If upcoming‑season page isn't available yet, fall back to last season.
+    """
     cache: Dict[str, Dict] = {}
     if CACHE_FILE.exists() and time.time() - CACHE_FILE.stat().st_mtime < CACHE_TTL:
         cache = json.loads(CACHE_FILE.read_text())
-    if team in cache:
-        return cache[team]
 
-    table = _team_html(team).select_one("#roster")
-    df = pd.read_html(str(table), flavor="lxml")[0]  # force lxml parser
+    def _scrape(season: int) -> Dict[str, List[str]] | None:
+        table = _team_html(team, season).select_one("#roster")
+        if table is None:
+            return None
+        df = pd.read_html(str(table), flavor="lxml")[0]
 
-    name_col = "Player" if "Player" in df.columns else next(
-        c for c in df.columns if "Player" in c
-    )
+        name_col = "Player" if "Player" in df.columns else next(
+            c for c in df.columns if "Player" in c
+        )
 
-    if "GS" in df.columns:
-        df["GS"] = pd.to_numeric(df["GS"], errors="coerce").fillna(0)
-        df = df.sort_values("GS", ascending=False)
+        if "GS" in df.columns:
+            df["GS"] = pd.to_numeric(df["GS"], errors="coerce").fillna(0)
+            df = df.sort_values("GS", ascending=False)
 
-    starters = [_fix(p) for p in df.head(5)[name_col].tolist()]
-    bench = [_fix(p) for p in df[name_col].tolist() if p not in starters]
-    roster = {"starters": starters, "bench": bench}
+        starters = [_fix(p) for p in df.head(5)[name_col].tolist()]
+        bench = [_fix(p) for p in df[name_col].tolist() if p not in starters]
+        return {"starters": starters, "bench": bench}
 
-    cache[team] = roster
+    season = _season_year()
+    key = f"{team}_{season}"
+    if key in cache:
+        return cache[key]
+
+    roster = _scrape(season) or _scrape(season - 1)  # fall back
+    if roster is None:
+        raise ValueError(f"Unable to locate roster table for {team} ({season})")
+
+    cache[key] = roster
     CACHE_FILE.write_text(json.dumps(cache))
     return roster
+
