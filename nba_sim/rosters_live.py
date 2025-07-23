@@ -14,17 +14,40 @@ from bs4 import BeautifulSoup
 import pandas as pd
 from .utils.scraping import soup
 
-TEAM_ABR: Dict[str, str] = {
-    "Atlanta Hawks": "ATL", "Boston Celtics": "BOS", "Brooklyn Nets": "BRK",
-    "Charlotte Hornets": "CHO", "Chicago Bulls": "CHI", "Cleveland Cavaliers": "CLE",
-    "Dallas Mavericks": "DAL", "Denver Nuggets": "DEN", "Detroit Pistons": "DET",
-    "Golden State Warriors": "GSW", "Houston Rockets": "HOU", "Indiana Pacers": "IND",
-    "Los Angeles Clippers": "LAC", "Los Angeles Lakers": "LAL", "Memphis Grizzlies": "MEM",
-    "Miami Heat": "MIA", "Milwaukee Bucks": "MIL", "Minnesota Timberwolves": "MIN",
-    "New Orleans Pelicans": "NOP", "New York Knicks": "NYK", "Oklahoma City Thunder": "OKC",
-    "Orlando Magic": "ORL", "Philadelphia 76ers": "PHI", "Phoenix Suns": "PHO",
-    "Portland Trail Blazers": "POR", "Sacramento Kings": "SAC", "San Antonio Spurs": "SAS",
-    "Toronto Raptors": "TOR", "Utah Jazz": "UTA", "Washington Wizards": "WAS",
+TEAM_ABR: dict[str, str] = {
+    # Eastern Conference
+    "Atlanta Hawks":             "ATL",
+    "Boston Celtics":            "BOS",
+    "Brooklyn Nets":             "BKN",
+    "Charlotte Hornets":         "CHA",
+    "Chicago Bulls":             "CHI",
+    "Cleveland Cavaliers":       "CLE",
+    "Detroit Pistons":           "DET",
+    "Indiana Pacers":            "IND",
+    "Miami Heat":                "MIA",
+    "Milwaukee Bucks":           "MIL",
+    "New York Knicks":           "NYK",
+    "Orlando Magic":             "ORL",
+    "Philadelphia 76ers":        "PHI",
+    "Toronto Raptors":           "TOR",
+    "Washington Wizards":        "WAS",
+
+    # Western Conference
+    "Dallas Mavericks":          "DAL",
+    "Denver Nuggets":            "DEN",
+    "Golden State Warriors":     "GSW",
+    "Houston Rockets":           "HOU",
+    "Los Angeles Clippers":      "LAC",
+    "Los Angeles Lakers":        "LAL",
+    "Memphis Grizzlies":         "MEM",
+    "Minnesota Timberwolves":    "MIN",
+    "New Orleans Pelicans":      "NOP",
+    "Oklahoma City Thunder":     "OKC",
+    "Phoenix Suns":              "PHO",
+    "Portland Trail Blazers":    "POR",
+    "Sacramento Kings":          "SAC",
+    "San Antonio Spurs":         "SAS",
+    "Utah Jazz":                 "UTA",
 }
 
 CACHE_FILE = Path(__file__).with_name("roster_cache.json")
