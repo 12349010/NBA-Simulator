@@ -38,20 +38,32 @@ with c2:
     st.text_area("Starters", key="away_starters", height=120)
     st.text_area("Bench",    key="away_bench",    height=120)
 
-# ---------- Options panel ----------
+# ---------- OPTIONS PANEL ----------
 with st.expander("🎛️  Simulation Options", expanded=True):
-    sim_runs = st.selectbox("Simulations to run", SIM_RUNS, index=3)
-    fatigue_on = st.checkbox("Apply travel‑fatigue (auto back‑to‑back)", value=True)
 
-    with st.expander("Advanced settings", expanded=False):
+    # -- basic options -----------------------
+    sim_runs   = st.selectbox("Simulations to run",
+                              options=[1, 10, 25, 50, 100], index=3)
+    fatigue_on = st.checkbox("Apply travel‑fatigue (auto back‑to‑back)",
+                             value=True)
+
+    # -- advanced calibration ---------------
+    with st.expander("Advanced settings · Calibrator", expanded=False):
         st.markdown(
-            "📐 **Calibrator** – give the *actual* final score from a real past game. "
-            "The engine will run several trial weight‑sets and store whichever minimises error."
+            "📐 **Calibrator** lets the engine tune its internal weight matrix "
+            "so that simulated final scores match a *real* past game as closely "
+            "as possible.\n\n"
+            "* **Auto** – uses Basketball‑Reference data for the chosen matchup & date*\n"
+            "* **Manual** – you type the actual score\n"
+            "* **No** – skip calibration entirely"
         )
-        enable_cal = st.checkbox("Enable calibrator")
-        if enable_cal:
-            act_home = st.number_input("Actual home score", value=0)
-            act_away = st.number_input("Actual away score", value=0)
+
+        cal_mode = st.radio("Calibrate?", ["No", "Auto", "Manual"],
+                            horizontal=True)
+
+        if cal_mode == "Manual":
+            act_home   = st.number_input("Actual home score", value=0)
+            act_away   = st.number_input("Actual away score", value=0)
             cal_trials = st.slider("Calibration trials", 5, 50, 25)
 
 game_date = st.date_input("Game date", value=date.today())
