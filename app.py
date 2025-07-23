@@ -12,6 +12,7 @@ ENGINE_VERSION = "v0.8.2"
 
 # ---------- page ----------
 st.set_page_config(page_title="NBA Game Sim", layout="wide")
+fatigue_on = st.checkbox("Apply travel‑fatigue (back‑to‑back)", value=True)
 st.title(f"🔮 48‑Min NBA Simulator  |  {ENGINE_VERSION}")
 
 TEAM_OPTIONS = ["— Select —"] + get_team_list()
@@ -71,12 +72,18 @@ if st.button("▶️ Simulate"):
         "away_starters":[p for p in st.session_state.away_starters.splitlines() if p],
         "home_backups":[p for p in st.session_state.home_bench.splitlines() if p],
         "away_backups":[p for p in st.session_state.away_bench.splitlines() if p],
+        "fatigue_on": fatigue_on,
     }
 
     # injuries
     with st.sidebar.expander("Injury report"):
         for pl in cfg["home_starters"] + cfg["away_starters"]:
             st.write(f"{pl}: **{get_status(pl)}**")
+        if g["Fatigue Flags"][cfg["home_team"]]:
+            st.write(f"💤 {cfg['home_team']} is on a back‑to‑back")
+        if g["Fatigue Flags"][cfg["away_team"]]:
+            st.write(f"💤 {cfg['away_team']} is on a back‑to‑back")
+
 
     # optional calibration
     if cal_mode and (actual_home or actual_away):
