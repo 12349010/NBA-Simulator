@@ -13,7 +13,7 @@ from pathlib import Path
 from functools import lru_cache
 from typing import Dict, List
 from nba_api.stats.endpoints import commonallplayers
-import pandas as pd
+import pandas as pd, logging, requests
 
 DATA_URL = "https://data.nba.com/data/10s/prod/v1/{season}/players.json"
 BL_URL   = "https://www.balldontlie.io/api/v1/players"
@@ -64,19 +64,26 @@ def _save_cache(d: Dict[str, Dict]):
 @lru_cache(maxsize=None)
 def _player_dump(season: int) -> List[Dict]:
     """
-    1) NBA CommonAllPlayers JSON  (walk back 6 seasons)
-    2) balldontlie (public REST)
-    3) [] on total failure
+    Robust 3‑layer roster fetch:
+
+    1) NBA Stats → CommonAllPlayers  (walk back 6 seasons, season‑agnostic)
+    2) balldontlie REST fallback
+    3) []  on total failure
     """
 
-    # ---------- 1) nba_api official ----------
-    for off in range(6):
-        yr = season - off
-        season_str = f"{yr-1}-{str(yr)[-2:]}"  # e.g. 2025 → '2024-25'
+    # ---- 1) NBA Stats loop ----
+    for off in range(6):                             # season .. season‑5
+        yr        = season - off
+        season_id = f"{yr-1}-{str(yr)[-2:]}"         # '2024-25' etc.
         try:
-            df = commonallplayers.CommonAllPlayers(
-                is_only_current_season=1, season=season_str
-            ).get_data_frames()[0]
+            df = (
+                commonallplayers.CommonAllPlayers(
+                    season=season_id,
+                    is_only_current_season=0,        # ← key change
+                    league_id="00",
+                )
+                .get_data_frames()[0]
+            )
             if not df.empty:
                 return [
                     {
@@ -89,15 +96,14 @@ def _player_dump(season: int) -> List[Dict]:
                     )
                 ]
         except Exception as e:
-            logging.warning(f"CommonAllPlayers {season_str} failed: {e}")
+            logging.warning(f"CommonAllPlayers {season_id} failed: {e}")
 
-    # ---------- 2) balldontlie fallback ----------
+    # ---- 2) balldontlie fallback ----
     try:
         players, page = [], 1
         while True:
             r = requests.get(
                 f"https://balldontlie.io/api/v1/players?page={page}&per_page=100",
-                headers=HDRS,
                 timeout=10,
             )
             r.raise_for_status()
@@ -117,7 +123,7 @@ def _player_dump(season: int) -> List[Dict]:
     except Exception as e:
         logging.warning(f"balldontlie fallback failed: {e}")
 
-    # ---------- 3) give up ----------
+    # ---- 3) give up ----
     return []
 
 # ---------- Public API ----------
