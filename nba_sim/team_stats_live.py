@@ -19,18 +19,29 @@ def _load():
 def _save(d): CACHE.write_text(json.dumps(d))
 
 @lru_cache(maxsize=None)
-def get_team_defense(team:str, season:int|None=None)->dict:
+def get_team_defense(team: str, season: int | None = None) -> dict:
     season = season or _season_year()
-    cache=_load(); key=f"{team}_{season}"
-    if key in cache: return cache[key]
+    cache = _load(); key = f"{team}_{season}"
+    if key in cache:
+        return cache[key]
 
-    abr=TEAM_ABR[team]
-    url=f"https://www.basketball-reference.com/teams/{abr}/{season}.html"
-    html=soup(url, ttl_hours=TTL//3600)
-    misc = pd.read_html(str(html.select_one("#team_misc")), flavor="lxml")[0]
-    row  = misc.iloc[0]
-    drtg = float(row["DRtg"])
-    oppefg = float(row["Opp eFG%"])
-    out={"DRtg":drtg, "Opp_eFG":oppefg}
-    cache[key]=out; _save(cache)
+    abr = TEAM_ABR[team]
+    url = f"https://www.basketball-reference.com/teams/{abr}/{season}.html"
+    html = soup(url, ttl_hours=TTL // 3600)
+
+    try:
+        misc_tbl = html.select_one("#team_misc")
+        if misc_tbl is None:
+            raise ValueError("missing table")
+        misc = pd.read_html(str(misc_tbl), flavor="lxml")[0]
+        row = misc.iloc[0]
+        drtg = float(row["DRtg"])
+        oppefg = float(row["Opp eFG%"])
+    except Exception:
+        # league‑average fallback
+        drtg, oppefg = 113.0, 0.535
+
+    out = {"DRtg": drtg, "Opp_eFG": oppefg}
+    cache[key] = out
+    _save(cache)
     return out
