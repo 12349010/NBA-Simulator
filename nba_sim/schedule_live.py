@@ -19,7 +19,7 @@ def _team_schedule(team:str, season:int):
     abr=TEAM_ABR[team]
     url=f"https://www.basketball-reference.com/teams/{abr}/{season}_games.html"
     tbl = soup(url, ttl_hours=TTL//3600).select_one("#games")
-    df  = pd.read_html(str(tbl))[0]
+    df  = pd.read_html(str(tbl), flavor="lxml")[0]    # ← force lxml parser
     df  = df[df["G"].apply(lambda x:str(x).isdigit())]
     df["Date"] = pd.to_datetime(df["Date"])
     return df
