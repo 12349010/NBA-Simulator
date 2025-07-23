@@ -21,7 +21,8 @@ import pandas as pd
 
 # --------------------------------------------------------------------- #
 # Location of the committed JSON (relative to this file)
-DATA_PATH = Path(__file__).with_name("../data/schedule.json").resolve()
+PKG_DIR = Path(__file__).parent
+DATA_PATH = (PKG_DIR.parent / "data" / "schedule.json").resolve()
 
 # Import the team‑id map from the roster module
 from nba_sim.rosters_http import TEAM_NAME   # id→name dict
