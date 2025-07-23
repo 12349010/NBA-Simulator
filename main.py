@@ -1,6 +1,6 @@
 from nba_sim.team_model import Team
 from nba_sim.possession_engine import simulate_game
-from nba_sim.rosters_live import get_roster
+from nba_sim.rosters_json import get_roster, get_team_list
 
 def _build(name, starters, bench, season, home):
     return Team(name, starters+bench, season, is_home=home)
