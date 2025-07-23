@@ -78,18 +78,36 @@ def get_team_list() -> List[str]:
 @lru_cache(maxsize=None)
 def get_roster(team: str) -> Dict[str, List[str]]:
     """
-    Return {"starters": [...], "bench": [...]}.
-    If upcoming‑season page isn't available yet, fall back to last season.
+    Robust roster fetch:
+      • tries up to 5 seasons back
+      • automatically switches to known alternate abbreviations
     """
-    cache: Dict[str, Dict] = {}
-    if CACHE_FILE.exists() and time.time() - CACHE_FILE.stat().st_mtime < CACHE_TTL:
-        cache = json.loads(CACHE_FILE.read_text())
+    ALT = {
+        "BKN": ["BRK", "NJN"],
+        "BRK": ["BKN", "NJN"],
+        "CHA": ["CHO", "CHH"],
+        "CHO": ["CHA", "CHH"],
+        "NOP": ["NOH"],
+        "NOH": ["NOP"],
+    }
+    base_abr = TEAM_ABR[team]
+    season   = _season_year()
+    tried: set[str] = set()
 
-    def _scrape(season: int) -> Dict[str, List[str]] | None:
-        table = _team_html(team, season).select_one("#roster")
-        if table is None:
+    def _attempt(abr: str, yr: int) -> Dict[str, List[str]] | None:
+        key = f"{team}_{yr}_{abr}"
+        cache = _load()              # small helper that opens JSON or {}
+        if key in cache:
+            return cache[key]
+
+        url = f"https://www.basketball-reference.com/teams/{abr}/{yr}.html"
+        try:
+            tbl = soup(url, ttl_hours=CACHE_TTL // 3600).select_one("#roster")
+            if tbl is None:
+                return None
+            df = pd.read_html(str(tbl), flavor="lxml")[0]
+        except Exception:
             return None
-        df = pd.read_html(str(table), flavor="lxml")[0]
 
         name_col = "Player" if "Player" in df.columns else next(
             c for c in df.columns if "Player" in c
@@ -100,19 +118,29 @@ def get_roster(team: str) -> Dict[str, List[str]]:
             df = df.sort_values("GS", ascending=False)
 
         starters = [_fix(p) for p in df.head(5)[name_col].tolist()]
-        bench = [_fix(p) for p in df[name_col].tolist() if p not in starters]
-        return {"starters": starters, "bench": bench}
+        bench    = [_fix(p) for p in df[name_col].tolist() if p not in starters]
+        roster   = {"starters": starters, "bench": bench}
 
-    season = _season_year()
-    key = f"{team}_{season}"
-    if key in cache:
-        return cache[key]
+        cache[key] = roster; _save(cache)
+        return roster
 
-    roster = _scrape(season) or _scrape(season - 1)  # fall back
-    if roster is None:
-        raise ValueError(f"Unable to locate roster table for {team} ({season})")
+    # 1) primary loop: current season → season‑5
+    for yr_offset in range(0, 6):
+        yr = season - yr_offset
+        roster = _attempt(base_abr, yr)
+        if roster:
+            return roster
+        tried.add(f"{base_abr}_{yr}")
 
-    cache[key] = roster
-    CACHE_FILE.write_text(json.dumps(cache))
-    return roster
+    # 2) secondary loop: alternate abbreviations
+    for alt in ALT.get(base_abr, []):
+        for yr_offset in range(0, 6):
+            yr = season - yr_offset
+            if f"{alt}_{yr}" in tried:
+                continue
+            roster = _attempt(alt, yr)
+            if roster:
+                return roster
 
+    raise ValueError(f"Unable to locate roster table for {team} "
+                     f"(tried {base_abr} plus alternates over 6 seasons)")
