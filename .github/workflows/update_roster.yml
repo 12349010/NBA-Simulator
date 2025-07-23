@@ -1,0 +1,20 @@
+name: Nightly roster update
+on:
+  schedule:
+    - cron:  '0 9 * * *'   # 09:00 UTC daily
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          curl -sSL https://data.nba.com/data/10s/prod/v1/2024/players.json \
+               -o data/players.json
+          curl -sSL https://data.nba.com/data/10s/prod/v1/2024/schedule.json \
+               -o data/schedule.json
+      - run: |
+          git config --global user.name  "bot"
+          git config --global user.email "bot@users.noreply.github.com"
+          git add data/*.json
+          git commit -m "nightly roster/schedule update" || echo "no changes"
+          git push
