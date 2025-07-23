@@ -32,31 +32,31 @@ def _save_cache(d: Dict[str, List[str]]) -> None:
     CACHE_FILE.write_text(json.dumps(d))
 
 
-# ---------- internal: scrape one season ----------
 @lru_cache(maxsize=None)
 def _team_schedule(team: str, season: int) -> pd.DataFrame:
     """
-    Return a DataFrame with at least columns ['Date', 'G', 'PTS', 'Opp PTS', 'Unnamed: 5'].
-    Falls back to previous season if the page or table isn't available yet.
+    Return schedule DataFrame. Walks back up to 5 seasons until it finds a page
+    with a #games table.
     """
+    abr = TEAM_ABR[team]
+
     def _fetch(season_year: int) -> BeautifulSoup | None:
-        abr = TEAM_ABR[team]
         url = f"https://www.basketball-reference.com/teams/{abr}/{season_year}_games.html"
         try:
-            return soup(url, ttl_hours=TTL_SEC // 3600).select_one("#games")
+            return soup(url, ttl_hours=TTL // 3600).select_one("#games")
         except Exception:
             return None
 
-    tbl = _fetch(season)
-    if tbl is None:                    # upcoming season not published yet
-        tbl = _fetch(season - 1)
-        if tbl is None:
-            raise ValueError(f"Could not fetch schedule for {team} ({season} or {season-1})")
+    for yr_offset in range(0, 6):            # season, season‑1, … season‑5
+        tbl = _fetch(season - yr_offset)
+        if tbl is not None:
+            df = pd.read_html(str(tbl), flavor="lxml")[0]
+            df = df[df["G"].astype(str).str.isnumeric()]
+            df["Date"] = pd.to_datetime(df["Date"])
+            return df
 
-    df  = pd.read_html(str(tbl), flavor="lxml")[0]
-    df  = df[df["G"].astype(str).str.isnumeric()]        # drop header rows
-    df["Date"] = pd.to_datetime(df["Date"])
-    return df
+    raise ValueError(f"Could not fetch schedule for {team} "
+                     f"(seasons {season}..{season-5})")
 
 
 # ---------- public helper ----------
