@@ -1,13 +1,20 @@
 from dataclasses import dataclass
 from typing import List
 from .player_model import Player
+import nba_sim.data_acquisition as da
 
 @dataclass
 class Team:
     name: str
-    players: List[Player]
-    coach: dict
+    roster_names: List[str]
+    coach: str
+    season: int
     is_home: bool = False
+    players: List[Player] = field(init=False)
+
+    def __post_init__(self):
+        ages = {n: 20 + len(da.get_player_season_avgs(da.slugify(n), self.season)) for n in self.roster_names}
+        self.players = [Player(n, self.season) for n in self.roster_names if minutes_cap(get_status(n)) > 0]
 
     def _eligible(self, minute: int) -> List[Player]:
         return [p for p in self.players if p.minutes_so_far < p.minutes_cap]
