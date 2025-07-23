@@ -14,9 +14,10 @@ from pathlib import Path
 from typing import Dict, List
 
 # ------- locate the data file -------
-DATA = Path(__file__).with_name("../data/players.json").resolve()
+PKG_DIR = Path(__file__).parent          # …/nba_sim
+DATA    = (PKG_DIR.parent / "data" / "players.json").resolve()
 if not DATA.exists():
-    logging.warning("players.json not found; starters will show 'N/A'")
+    logging.warning(f"{DATA} not found; starters will show 'N/A'")
 
 with open(DATA, "r") as f:
     PLAYERS_RAW = json.load(f).get("league", {}).get("standard", [])
