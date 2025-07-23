@@ -6,3 +6,4 @@ lxml
 streamlit
 scipy
 tqdm
+unidecode         # name-matching helper
