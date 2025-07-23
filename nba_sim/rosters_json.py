@@ -12,7 +12,8 @@ import datetime as dt, json, time, requests, logging
 from pathlib import Path
 from functools import lru_cache
 from typing import Dict, List
-from nba_api.stats.static import players as nba_players
+from nba_api.stats.endpoints import commonallplayers
+import pandas as pd
 
 DATA_URL = "https://data.nba.com/data/10s/prod/v1/{season}/players.json"
 BL_URL   = "https://www.balldontlie.io/api/v1/players"
@@ -63,55 +64,60 @@ def _save_cache(d: Dict[str, Dict]):
 @lru_cache(maxsize=None)
 def _player_dump(season: int) -> List[Dict]:
     """
-    Robust 3‑level roster fetch:
-      1) data.nba.com  – walk back up to 5 seasons
-      2) nba_api       – CommonAllPlayers (current season)
-      3) balldontlie   – as before
-      4) total failure → []
+    1) NBA CommonAllPlayers JSON  (walk back 6 seasons)
+    2) balldontlie (public REST)
+    3) [] on total failure
     """
-    # ---- 1) NBA CDN loop (season .. season‑5) ----
+
+    # ---------- 1) nba_api official ----------
     for off in range(6):
         yr = season - off
-        url = DATA_URL.format(season=yr)
+        season_str = f"{yr-1}-{str(yr)[-2:]}"  # e.g. 2025 → '2024-25'
         try:
-            r = requests.get(url, headers=HDRS, timeout=10)
-            if r.status_code == 200:
-                return r.json()["league"]["standard"]
-        except Exception:
-            pass   # try previous season
+            df = commonallplayers.CommonAllPlayers(
+                is_only_current_season=1, season=season_str
+            ).get_data_frames()[0]
+            if not df.empty:
+                return [
+                    {
+                        "firstName": fn,
+                        "lastName": ln,
+                        "teamId": int(tid) if pd.notna(tid) else None,
+                    }
+                    for fn, ln, tid in zip(
+                        df["FIRST_NAME"], df["LAST_NAME"], df["TEAM_ID"]
+                    )
+                ]
+        except Exception as e:
+            logging.warning(f"CommonAllPlayers {season_str} failed: {e}")
 
-    # ---- 2) nba_api CommonAllPlayers (no season arg) ----
-    try:
-        plist = nba_players.get_players()
-        return [
-            {"firstName": p["first_name"], "lastName": p["last_name"],
-             "teamId": p["team_id"] or None}
-            for p in plist
-        ]
-    except Exception as e:
-        logging.warning(f"nba_api fallback failed: {e}")
-
-    # ---- 3) balldontlie (loop pages) ----
+    # ---------- 2) balldontlie fallback ----------
     try:
         players, page = [], 1
         while True:
-            resp = requests.get(f"{BL_URL}?page={page}&per_page=100",
-                                headers=HDRS, timeout=10)
-            resp.raise_for_status()
-            js = resp.json()
+            r = requests.get(
+                f"https://balldontlie.io/api/v1/players?page={page}&per_page=100",
+                headers=HDRS,
+                timeout=10,
+            )
+            r.raise_for_status()
+            js = r.json()
             players.extend(js["data"])
             if js["meta"]["next_page"] is None:
                 break
             page += 1
         return [
-            {"firstName": p["first_name"], "lastName": p["last_name"],
-             "teamId": p["team"]["id"] if p["team"] else None}
+            {
+                "firstName": p["first_name"],
+                "lastName": p["last_name"],
+                "teamId": p["team"]["id"] if p["team"] else None,
+            }
             for p in players
         ]
     except Exception as e:
         logging.warning(f"balldontlie fallback failed: {e}")
 
-    # ---- 4) give up ----
+    # ---------- 3) give up ----------
     return []
 
 # ---------- Public API ----------
