@@ -1,13 +1,14 @@
 ############################################
-# app.py  –  Streamlit GUI  (Engine v0.4)  #
+# app.py  –  Streamlit GUI  (Engine v0.5)  #
 ############################################
 import streamlit as st, numpy as np, pandas as pd
 from datetime import date
 from nba_sim import calibration as calib
 from nba_sim import weights as W
+from nba_sim.utils.injury import get_status
 from main import play_game
 
-ENGINE_VERSION = "v0.4-calibrator"
+ENGINE_VERSION = "v0.5-injury"
 
 st.set_page_config(page_title="NBA Game Sim", layout="wide")
 st.title(f"🔮 48‑Min NBA Simulator | {ENGINE_VERSION}")
@@ -15,10 +16,11 @@ st.title(f"🔮 48‑Min NBA Simulator | {ENGINE_VERSION}")
 # ---------- sidebar: calibration ----------
 with st.sidebar:
     st.header("🛠 Calibration")
-    st.markdown("Feed the **actual final scores** from a real game to auto‑tune weights.")
     cal_mode = st.checkbox("Enable calibrator")
+    if cal_mode:
+        st.caption("Enter actual scores in main form")
 
-# ---------- input form ----------
+# ---------- main form ----------
 with st.form("sim_form", clear_on_submit=False):
     col1, col2 = st.columns(2)
     with col1:
@@ -43,26 +45,33 @@ with st.form("sim_form", clear_on_submit=False):
 
     submitted = st.form_submit_button("▶️ Simulate")
 
-# ---------- run sims ----------
+# ---------- run ----------
 if submitted:
+    starters_h = [p.strip() for p in home_start.strip().splitlines() if p.strip()]
+    starters_a = [p.strip() for p in away_start.strip().splitlines() if p.strip()]
     cfg_base = {
         "game_date": str(game_date),
         "home_team": home_team, "away_team": away_team,
-        "home_starters": [p.strip() for p in home_start.strip().splitlines() if p.strip()],
-        "away_starters": [p.strip() for p in away_start.strip().splitlines() if p.strip()],
+        "home_starters": starters_h, "away_starters": starters_a,
         "home_backups":  [p.strip() for p in home_back.strip().splitlines() if p.strip()],
         "away_backups":  [p.strip() for p in away_back.strip().splitlines() if p.strip()],
         "home_coach": home_coach, "away_coach": away_coach
     }
 
-    # ----- optional calibration -----
+    # injury sidebar read‑out
+    with st.sidebar.expander("Injury report", expanded=False):
+        for pl in starters_h + starters_a:
+            st.write(f"{pl}: **{get_status(pl)}**")
+
+    # calibration
     if cal_mode and (actual_home > 0 or actual_away > 0):
-        with st.spinner("Calibrating weights…"):
+        with st.spinner("Calibrating…"):
+            W.save(W.DEFAULT)                   # reset to defaults first
             new_w, best_err = calib.calibrate(cfg_base, actual_home, actual_away, cal_trials)
-        st.sidebar.success(f"Calibrated! MAE ≈ {best_err:.2f}")
+        st.sidebar.success(f"MAE ≈ {best_err:.2f}")
         st.sidebar.json(new_w, expanded=False)
 
-    # ----- normal multi‑run sim -----
+    # simulations
     prog = st.progress(0.0)
     res_home, res_away, per_player = [], [], {}
     for i in range(runs):
