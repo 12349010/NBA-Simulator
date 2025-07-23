@@ -1,4 +1,4 @@
-import pandas as pd, csv, pkg_resources
+import pandas as pd, csv
 from functools import lru_cache
 from .utils.scraping import soup
 from pathlib import Path
