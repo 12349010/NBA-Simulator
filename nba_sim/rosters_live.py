@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-Dynamic NBA rosters *and* head coach (UTF‑8 safe)
+Dynamic NBA rosters (UTF‑8 safe) — coach scraping removed
+---------------------------------------------------------
+get_team_list()  ->  list[ str ]
+get_roster(team) ->  {"starters":[...], "bench":[...]}
 """
 import json, time, re
 from datetime import datetime
@@ -25,26 +28,16 @@ TEAM_ABR: Dict[str, str] = {
 }
 
 CACHE_FILE = Path(__file__).with_name("roster_cache.json")
-CACHE_TTL  = 12 * 60 * 60  # 12 h
+CACHE_TTL  = 12 * 60 * 60
 
 def _season_year() -> int:
     today = datetime.now()
     return today.year + (1 if today.month >= 7 else 0)
 
-def _load_cache() -> Dict[str, Dict]:
-    if CACHE_FILE.exists() and time.time() - CACHE_FILE.stat().st_mtime < CACHE_TTL:
-        return json.loads(CACHE_FILE.read_text())
-    return {}
-
-def _save_cache(d: Dict[str, Dict]) -> None:
-    CACHE_FILE.write_text(json.dumps(d))
-
-def _fix(text: str) -> str:          # repair mojibake
+def _fix(text: str) -> str:            # repair mojibake
     if "Ã" in text or "Å" in text:
-        try:
-            return text.encode("latin1").decode("utf-8")
-        except UnicodeDecodeError:
-            pass
+        try: return text.encode("latin1").decode("utf-8")
+        except UnicodeDecodeError: pass
     return text
 
 @lru_cache(maxsize=None)
@@ -52,17 +45,19 @@ def _team_html(team: str):
     url = f"https://www.basketball-reference.com/teams/{TEAM_ABR[team]}/{_season_year()}.html"
     return soup(url, ttl_hours=CACHE_TTL // 3600)
 
-# ---------- public ----------
 def get_team_list() -> List[str]:
     return sorted(TEAM_ABR.keys())
 
 @lru_cache(maxsize=None)
 def get_roster(team: str) -> Dict[str, List[str]]:
-    cache = _load_cache()
+    cache: Dict[str, Dict] = {}
+    if CACHE_FILE.exists() and time.time() - CACHE_FILE.stat().st_mtime < CACHE_TTL:
+        cache = json.loads(CACHE_FILE.read_text())
     if team in cache:
         return cache[team]
 
-    df = pd.read_html(str(_team_html(team).select_one("#roster")))[0]
+    table = _team_html(team).select_one("#roster")
+    df = pd.read_html(str(table))[0]
     name_col = "Player" if "Player" in df.columns else next(c for c in df.columns if "Player" in c)
     if "GS" in df.columns:
         df["GS"] = pd.to_numeric(df["GS"], errors="coerce").fillna(0)
@@ -70,35 +65,7 @@ def get_roster(team: str) -> Dict[str, List[str]]:
 
     starters = [_fix(p) for p in df.head(5)[name_col].tolist()]
     bench    = [_fix(p) for p in df[name_col].tolist() if p not in starters]
-    out = {"starters": starters, "bench": bench}
-    cache[team] = out
-    _save_cache(cache)
-    return out
-
-@lru_cache(maxsize=None)
-def get_coach(team: str) -> str:
-    """Return head‑coach name or 'Unknown'."""
-    html = _team_html(team)
-
-    # ----- layout 1: meta div -----
-    meta = html.select_one("#meta")
-    if meta:
-        text = meta.get_text(" ", strip=True)
-        m = re.search(r"Coach:\s*([A-Za-z .’'‑\-]+)", text)
-        if m:
-            return _fix(m.group(1).strip())
-
-    # ----- layout 2: Team Misc table -----
-    misc = html.select_one("#team_misc")
-    if misc:
-        try:
-            df = pd.read_html(str(misc))[0]
-            if "Coach" in df.columns:
-                coach = str(df.iloc[0]["Coach"])
-                if coach and coach != "nan":
-                    return _fix(coach.strip())
-        except Exception:
-            pass
-
-    return "Unknown"
-
+    roster   = {"starters": starters, "bench": bench}
+    cache[team] = roster
+    CACHE_FILE.write_text(json.dumps(cache))
+    return roster
