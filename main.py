@@ -3,6 +3,9 @@ import nba_sim.data_acquisition as da
 from nba_sim.team_model      import Team
 from nba_sim.player_model    import Player
 from nba_sim.possession_engine import simulate_possession
+from nba_sim import weights as W
+
+SIM_WEIGHTS = W.load()
 
 def _build_team(name, starters, backups, coach, season, is_home):
     roster = starters + backups
