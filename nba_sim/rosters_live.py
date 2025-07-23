@@ -77,13 +77,28 @@ def get_roster(team: str) -> Dict[str, List[str]]:
 
 @lru_cache(maxsize=None)
 def get_coach(team: str) -> str:
-    """
-    B‑Ref formats:  <p><strong>Coach:</strong> Steve Kerr (65‑17)</p>
-    """
+    """Return head‑coach name or 'Unknown'."""
     html = _team_html(team)
-    tag = html.find("p", text=re.compile(r"Coach:", re.I))
-    if tag:
-        name = re.sub(r"Coach:\s*", "", tag.get_text())
-        name = re.sub(r"\s*\([\d\-]+\).*", "", name)  # strip record
-        return _fix(name.strip())
+
+    # ----- layout 1: meta div -----
+    meta = html.select_one("#meta")
+    if meta:
+        text = meta.get_text(" ", strip=True)
+        m = re.search(r"Coach:\s*([A-Za-z .’'‑\-]+)", text)
+        if m:
+            return _fix(m.group(1).strip())
+
+    # ----- layout 2: Team Misc table -----
+    misc = html.select_one("#team_misc")
+    if misc:
+        try:
+            df = pd.read_html(str(misc))[0]
+            if "Coach" in df.columns:
+                coach = str(df.iloc[0]["Coach"])
+                if coach and coach != "nan":
+                    return _fix(coach.strip())
+        except Exception:
+            pass
+
     return "Unknown"
+
