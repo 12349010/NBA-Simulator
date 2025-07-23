@@ -57,7 +57,7 @@ def get_roster(team: str) -> Dict[str, List[str]]:
         return cache[team]
 
     table = _team_html(team).select_one("#roster")
-    df = pd.read_html(str(table))[0]
+df = pd.read_html(str(table), flavor="lxml")[0]    # ← force lxml parser
     name_col = "Player" if "Player" in df.columns else next(c for c in df.columns if "Player" in c)
     if "GS" in df.columns:
         df["GS"] = pd.to_numeric(df["GS"], errors="coerce").fillna(0)
