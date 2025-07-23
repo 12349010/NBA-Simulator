@@ -14,13 +14,21 @@ from pathlib import Path
 from typing import Dict, List
 
 # ------- locate the data file -------
-PKG_DIR = Path(__file__).parent          # …/nba_sim
+PKG_DIR = Path(__file__).parent
 DATA    = (PKG_DIR.parent / "data" / "players.json").resolve()
-if not DATA.exists():
-    logging.warning(f"{DATA} not found; starters will show 'N/A'")
 
-with open(DATA, "r") as f:
-    PLAYERS_RAW = json.load(f).get("league", {}).get("standard", [])
+if DATA.exists() and DATA.stat().st_size > 0:          # ← check size
+    with open(DATA, "r") as f:
+        try:
+            PLAYERS_RAW = json.load(f)\
+                           .get("league", {})\
+                           .get("standard", [])
+        except json.JSONDecodeError as e:
+            logging.warning(f"Malformed players.json ({e}); using stub.")
+            PLAYERS_RAW = []
+else:
+    logging.warning("players.json missing or empty; using stub roster.")
+    PLAYERS_RAW = []
 
 # teamId -> full team name (single source of truth)
 TEAM_NAME: Dict[int, str] = {
