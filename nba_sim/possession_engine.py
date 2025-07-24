@@ -15,43 +15,40 @@ def played_yesterday(team: str, game_date: str) -> bool:
     gd = pd.to_datetime(game_date).date()
     return (gd - dt.timedelta(days=1)) in sched["startDate"].dt.date.values
 
-def _def_adj(team_def:dict)->float:
-    drtg, opo = team_def["DRtg"], team_def["Opp_eFG"]
-    return 1 - (drtg-113)/500 - (opo-0.535)/5   # clamp happens later
 
-def simulate_game(home, away, game_date:str, fatigue_on=True, seed:int|None=None):
-    if seed is not None: random.seed(seed)
-    season=int(game_date[:4])+(1 if int(game_date[5:7])>=7 else 0)
-    def_h=get_team_defense(home.name,season)
-    def_a=get_team_defense(away.name,season)
-    adj_h=_def_adj(def_h); adj_a=_def_adj(def_a)
-    fat_h = played_yesterday(home.name, game_date) if fatigue_on else False
-    fat_a = played_yesterday(away.name, game_date) if fatigue_on else False
+def simulate_game(home, away, date, config):
+    # initialize RNG
+    rng = np.random.default_rng(config.get("seed"))
 
-    clock=0; quarter=0
-    score={home.name:0, away.name:0}
-    qsplit={home.name:[0,0,0,0], away.name:[0,0,0,0]}
-    minute_targets=[34,34,34,34,34,22,22,22]
-    home.players+=home.players[5:8]; away.players+=away.players[5:8]
+    # check fatigue/back-to-back
+    fat_h = played_yesterday(home.name, date)
+    fat_a = played_yesterday(away.name, date)
 
-    rng=np.random.default_rng(seed)
+    # load rosters
+    home.players = get_roster(home.name, date)
+    away.players = get_roster(away.name, date)
 
-    while clock<48*60:
-        off, deff, adj, fat = ((home,away,adj_a,fat_h) if (clock//24)%2==0
-                               else (away,home,adj_h,fat_a))
-        lineup=[]
-        for p,mt in zip(off.players, minute_targets):
-            if p.minutes_so_far<mt and len(lineup)<5: lineup.append(p)
-        if len(lineup)<5: lineup=off.players[:5]
+    # set starters/bench
+    # TODO: verify bench logic
+    lineup_home = [p for p in home.players if p.starter]
+    lineup_away = [p for p in away.players if p.starter]
 
-        shooter=rng.choice(lineup, p=np.array([p.base_stats.get("USG%",20) for p in lineup]))
-        is3=rng.random()<shooter.tendencies["three_pt_rate"]
-        p_make=shooter.eff_fg()*adj
-        if fat: p_make*=0.95
-        p_make+=rng.uniform(-0.02,0.02)
-        p_make=np.clip(p_make,0.25,0.75)
-        made=rng.random()<p_make
-        pts=3 if (made and is3) else (2 if made else 0)
+    # possession simulation
+    score = {home.name: 0, away.name: 0}
+    qsplit = {home.name: {i: 0 for i in range(4)}, away.name: {i: 0 for i in range(4)}}
+    clock = 0.0
+    quarter = 0
+
+    while quarter < 4:
+        # simulate a single possession
+        off = home if quarter % 2 == 0 else away
+        defn = away if off is home else home
+        lineup = lineup_home if off is home else lineup_away
+        # placeholder: random outcome
+        made = rng.random() < 0.45
+        is3 = rng.random() < 0.35
+        pts = 3 if (made and is3) else (2 if made else 0)
+        shooter = lineup[rng.integers(len(lineup))]
         shooter.shot(made,is3); shooter.misc()
         score[off.name]+=pts; qsplit[off.name][quarter]+=pts
         poss=rng.integers(4,23); clock+=poss
