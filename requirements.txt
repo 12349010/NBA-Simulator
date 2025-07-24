@@ -8,4 +8,4 @@ scipy
 tqdm
 unidecode         # name-matching helper
 optuna
-nba_api
+gdown
