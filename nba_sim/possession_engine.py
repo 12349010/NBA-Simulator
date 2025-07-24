@@ -1,6 +1,6 @@
 import random, numpy as np
-from nba_sim.data_sqlite import roster as get_roster
-from nba_sim.data_sqlite import get_team_list, team_schedule as get_team_schedule
+from nba_sim.data_sqlite import get_roster
+from nba_sim.data_sqlite import get_team_schedule
 from nba_sim.data_sqlite import played_yesterday
 from nba_sim.data_sqlite import play_by_play
 import pandas as pd, datetime as dt
