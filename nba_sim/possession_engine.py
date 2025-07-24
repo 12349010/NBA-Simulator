@@ -1,8 +1,11 @@
 import random, numpy as np
-from nba_sim.data_sqlite import get_roster
-from nba_sim.data_sqlite import get_team_schedule
-from nba_sim.data_sqlite import played_yesterday
-from nba_sim.data_sqlite import play_by_play
+from nba_sim.data_sqlite import (
+    get_team_list,      # for populating your team dropdown
+    get_roster,         # to fetch starters & bench
+    get_team_schedule,  # for fatigue / schedule lookups
+    played_yesterday,   # to check back‑to‑back games
+    play_by_play        # (if/when you need play‑by‑play data)
+)
 import pandas as pd, datetime as dt
 
 def played_yesterday(team: str, game_date: str) -> bool:
