@@ -1,8 +1,12 @@
 from nba_sim.team_model import Team
 from nba_sim.possession_engine import simulate_game
-from nba_sim.data_sqlite import get_roster
-from nba_sim.data_sqlite import get_team_schedule
-from nba_sim.data_sqlite import played_yesterday
+from nba_sim.data_sqlite import (
+    get_team_list,      # for populating your team dropdown
+    get_roster,         # to fetch starters & bench
+    get_team_schedule,  # for fatigue / schedule lookups
+    played_yesterday,   # to check back‑to‑back games
+    play_by_play        # (if/when you need play‑by‑play data)
+)
 
 def _build(name, starters, bench, season, home):
     return Team(name, starters+bench, season, is_home=home)
