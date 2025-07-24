@@ -15,38 +15,34 @@ import sys
 PKG_DIR = Path(__file__).parent           # .../nba_sim
 DB_PATH = (PKG_DIR.parent / "data" / "nba.sqlite").resolve()
 
-# ─── Google Drive file ID (keep this!) ─────────────────────────────────
+# ─── Google Drive file ID ───────────────────────────────────────────────
 GDRIVE_ID = "1vvpcwTK6s11d8i5Cpb_sAAKN86AFaKjx"
 
-# ─── Ensure the data folder exists ─────────────────────────────────────
+# ─── Ensure the data folder exists ──────────────────────────────────────
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 def _download_db():
-    """Download the SQLite file from Google Drive via gdown."""
     import gdown
     url = f"https://drive.google.com/uc?id={GDRIVE_ID}"
     print("[Setup] nba.sqlite missing or invalid; downloading via gdown…", file=sys.stderr)
     gdown.download(url, str(DB_PATH), quiet=False)
     print(f"[Setup] Download complete: {DB_PATH}", file=sys.stderr)
 
-# ─── Determine whether we need to fetch the DB ──────────────────────────
-_need_download = False
-
+# ─── Download if missing or corrupt ─────────────────────────────────────
+_need = False
 if not DB_PATH.exists():
-    _need_download = True
+    _need = True
 else:
     try:
         with open(DB_PATH, "rb") as f:
-            header = f.read(15)
-        if not header.startswith(b"SQLite format 3"):
-            _need_download = True
-    except Exception:
-        _need_download = True
+            if not f.read(15).startswith(b"SQLite format 3"):
+                _need = True
+    except:
+        _need = True
 
-if _need_download:
+if _need:
     _download_db()
 
-# ─── Context manager for SQLite connections ─────────────────────────────
 @contextlib.contextmanager
 def _connect():
     con = sqlite3.connect(DB_PATH)
@@ -55,70 +51,88 @@ def _connect():
     finally:
         con.close()
 
-# ─── Public helpers ─────────────────────────────────────────────────────
-
+# ─── Team list from `team.full_name` ────────────────────────────────────
 @functools.lru_cache(maxsize=None)
 def get_team_list() -> list[str]:
-    """Return all full team names."""
     with _connect() as con:
-        df = pd.read_sql("SELECT DISTINCT full_name FROM team ORDER BY full_name", con)
+        df = pd.read_sql(
+            "SELECT full_name FROM team ORDER BY full_name", con
+        )
     return df["full_name"].tolist()
 
+# ─── Roster via `common_player_info` ────────────────────────────────────
 @functools.lru_cache(maxsize=512)
 def get_roster(team: str, season: int) -> dict[str, list[str]]:
-    """Return starters (top 5 by games started) and bench for a team in a season."""
+    """
+    Return starters (first 5) and bench (rest) for <team> in <season>.
+    Uses common_player_info.from_year/to_year to pick that season's roster.
+    """
     with _connect() as con:
-        team_id = pd.read_sql(
-            "SELECT team_id FROM team WHERE full_name = ?", con,
+        # look up the team’s numeric ID
+        tid = pd.read_sql(
+            "SELECT id FROM team WHERE full_name = ?", con,
             params=(team,)
-        )["team_id"].iloc[0]
+        )["id"].iloc[0]
 
-        query = f"""
-          SELECT p.player_name,
-                 SUM(CASE WHEN ls.line = 'starter' THEN 1 ELSE 0 END) AS starts
-          FROM game g
-          JOIN line_score ls ON ls.game_id = g.game_id AND ls.team_id = {team_id}
-          JOIN player p     ON p.player_id = ls.player_id
-          WHERE g.season = {season}
-          GROUP BY p.player_id
-          ORDER BY starts DESC
+        # grab everyone whose from_year ≤ season ≤ to_year
+        sql = """
+        SELECT display_first_last AS player_name
+          FROM common_player_info
+         WHERE team_id = ?
+           AND from_year <= ?
+           AND to_year   >= ?
+         ORDER BY player_name
         """
-        df = pd.read_sql(query, con)
+        df = pd.read_sql(sql, con, params=(tid, season, season))
 
     names = df["player_name"].tolist()
-    return {"starters": names[:5], "bench": names[5:]}
+    return {
+        "starters": names[:5],
+        "bench":    names[5:]
+    }
 
+# ─── Schedule from `game` table ─────────────────────────────────────────
 @functools.lru_cache(maxsize=128)
 def get_team_schedule(team: str, season: int) -> pd.DataFrame:
-    """Return a DataFrame of all games for <team> in <season>."""
+    """
+    Return DataFrame with game_id & date for all games where <team> is home or away.
+    """
     with _connect() as con:
-        team_id = pd.read_sql(
-            "SELECT team_id FROM team WHERE full_name = ?", con,
+        tid = pd.read_sql(
+            "SELECT id FROM team WHERE full_name = ?", con,
             params=(team,)
-        )["team_id"].iloc[0]
+        )["id"].iloc[0]
 
-        df = pd.read_sql(
-            f"SELECT game_id, date FROM game "
-            f"WHERE season = {season} "
-            f"  AND (home_team_id = {team_id} OR away_team_id = {team_id}) "
-            f"ORDER BY date",
-            con
-        )
-    df["date"] = pd.to_datetime(df["date"]).dt.date
-    return df
+        sql = """
+        SELECT game_id, game_date
+          FROM game
+         WHERE season_id = ?
+           AND (team_id_home = ? OR team_id_away = ?)
+         ORDER BY game_date
+        """
+        df = pd.read_sql(sql, con, params=(season, tid, tid))
 
-def played_yesterday(team: str, game_date: str|dt.date) -> bool:
+    df["date"] = pd.to_datetime(df["game_date"]).dt.date
+    return df[["game_id", "date"]]
+
+# ─── Back‑to‑back check ──────────────────────────────────────────────────
+def played_yesterday(team: str, game_date: str | dt.date) -> bool:
     """True if <team> had a game the day before <game_date>."""
-    gd    = pd.to_datetime(game_date).date()
+    gd = pd.to_datetime(game_date).date()
     sched = get_team_schedule(team, gd.year)
     return (gd - dt.timedelta(days=1)) in sched["date"].values
 
+# ─── Play‑by‑play loader ─────────────────────────────────────────────────
 def play_by_play(game_id: int) -> pd.DataFrame:
-    """Fetch the full play‑by‑play lines for a given game."""
+    """
+    Return the full play‑by‑play lines for <game_id>.
+    Columns include eventnum, period, player1_name, score, etc.
+    """
     with _connect() as con:
-        pbp = pd.read_sql(
+        df = pd.read_sql(
             "SELECT * FROM play_by_play WHERE game_id = ? "
-            "ORDER BY quarter, time_remaining",
-            con, params=(game_id,)
+            "ORDER BY period, eventnum",
+            con,
+            params=(game_id,)
         )
-    return pbp
+    return df
