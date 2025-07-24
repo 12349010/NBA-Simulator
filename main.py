@@ -1,27 +1,35 @@
 from nba_sim.team_model import Team
 from nba_sim.possession_engine import simulate_game
-from nba_sim.data_sqlite import (
-    get_team_list,      # for populating your team dropdown
-    get_roster,         # to fetch starters & bench
-    get_team_schedule,  # for fatigue / schedule lookups
-    played_yesterday,   # to check back‑to‑back games
-    play_by_play        # (if/when you need play‑by‑play data)
-)
 
 def _build(name, starters, bench, season, home):
-    return Team(name, starters+bench, season, is_home=home)
+    return Team(name, starters + bench, season, is_home=home)
 
-def play_game(cfg:dict, seed:int|None=None):
-    season=int(cfg["game_date"][:4])+(1 if int(cfg["game_date"][5:7])>=7 else 0)
-    home=_build(cfg["home_team"], cfg["home_starters"], cfg["home_backups"], season, True)
-    away=_build(cfg["away_team"], cfg["away_starters"], cfg["away_backups"], season, False)
+def play_game(cfg: dict, seed: int | None = None):
+    # Determine NBA season based on game_date
+    year, month = map(int, cfg["game_date"].split("-")[:2])
+    season = year + (1 if month >= 7 else 0)
+
+    # Build Team objects for home and away
+    home = _build(
+        cfg["home_team"],
+        cfg.get("home_starters", []),
+        cfg.get("home_backups", []),
+        season,
+        True,
+    )
+    away = _build(
+        cfg["away_team"],
+        cfg.get("away_starters", []),
+        cfg.get("away_backups", []),
+        season,
+        False,
+    )
+
+    # Consolidate simulation config
     config = {
         "fatigue_on": cfg.get("fatigue_on", True),
-        "seed": seed
+        "seed": seed,
     }
-    return simulate_game(
-        home,
-        away,
-        cfg["game_date"],
-        config
-    )
+
+    # Run simulation
+    return simulate_game(home, away, cfg["game_date"], config)
