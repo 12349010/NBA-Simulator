@@ -10,16 +10,17 @@ from nba_sim.data_sqlite import (
     play_by_play
 )
 
-# Path to the SQLite DB for direct queries if needed
 from pathlib import Path
 import sqlite3
+
+# Path to the SQLite DB
 DB_PATH = Path(__file__).parent.parent / "data" / "nba.sqlite"
 
 
 def _get_line_score(game_id: int) -> dict[str, list[int]]:
     """
-    Fetches quarter-by-quarter scoring for a given game_id from the line_score table.
-    Returns a dict with keys 'home' and 'away', each mapping to a list of 4 quarterly point totals.
+    Fetches quarter-by-quarter scoring for a given game_id from line_score.
+    Returns a dict with 'home' and 'away' lists of points per quarter.
     """
     con = sqlite3.connect(DB_PATH)
     cols = [f"pts_qtr{i}_home" for i in range(1,5)] + [f"pts_qtr{i}_away" for i in range(1,5)]
@@ -39,16 +40,17 @@ def _get_line_score(game_id: int) -> dict[str, list[int]]:
 
 def simulate_game(home, away, game_date: str, config: dict) -> dict:
     """
-    Simulates a 48-minute NBA game between home and away teams on game_date.
-    Returns a dict containing final score, quarter splits (simulated), box scores, and fatigue flags.
+    Simulates a 48-minute NBA game between home and away on game_date.
+    Returns simulated results and actual line_score splits.
     """
-    # RNG setup
+    # RNG init
     rng = np.random.default_rng(config.get("seed", None))
 
-    # Season calculation for schedule lookup
-    season = int(game_date[:4]) + (1 if int(game_date[5:7]) >= 7 else 0)
+    # Season calculation: year if month <7, else year+1 to match season_id
+    year, month = map(int, game_date.split("-")[:2])
+    season = year + (1 if month >= 7 else 0)
 
-    # Fatigue/back-to-back check
+    # Fatigue/back-to-back flags
     fat_h = played_yesterday(home.name, game_date)
     fat_a = played_yesterday(away.name, game_date)
 
@@ -58,60 +60,61 @@ def simulate_game(home, away, game_date: str, config: dict) -> dict:
     home.players = rost_h["starters"] + rost_h["bench"]
     away.players = rost_a["starters"] + rost_a["bench"]
 
-    # Ensure we have Player objects
-    home.players = home.players
-    away.players = away.players
-
-    # Setup lineups
+    # Quick lineup sets
     lineup_home = home.players[:5]
     lineup_away = away.players[:5]
 
-    # Initialize tracking
+    # Initialize simulation trackers
     score = {home.name: 0, away.name: 0}
-    qsplit = {home.name: {i: 0 for i in range(4)}, away.name: {i: 0 for i in range(4)}}
-    clock = 0  # seconds elapsed
+    qsplit_sim = {home.name: {i: 0 for i in range(4)}, away.name: {i: 0 for i in range(4)}}
+    clock = 0  # seconds
     quarter = 0
 
-    # Core possession loop
+    # Possession-driven sim
     while quarter < 4:
-        # Determine which team has the ball
         off = home if (clock // 24) % 2 == 0 else away
         lineup = lineup_home if off is home else lineup_away
 
-        # Random shot outcome parameters (placeholder)
+        # Random outcome placeholder
         made = rng.random() < 0.45
         is3 = rng.random() < 0.35
         pts = 3 if (made and is3) else (2 if made else 0)
 
-        # Assign points and update player stats
         shooter = lineup[rng.integers(len(lineup))]
         shooter.shot(made, is3)
         shooter.misc()
         score[off.name] += pts
-        qsplit[off.name][quarter] += pts
+        qsplit_sim[off.name][quarter] += pts
 
-        # Advance clock by possession length
+        # Advance clock
         poss = int(rng.integers(4, 23))
         clock += poss
         for p in lineup:
             p.minutes_so_far += poss / 60
 
-        # Move to next quarter if time threshold reached
+        # Quarter break
         if (clock // 60) >= (quarter + 1) * 12 and quarter < 3:
             quarter += 1
 
-    # Fetch actual line_score for calibration/testing if needed
-    # schedule_df = get_team_schedule(home.name, season)
-    # gid = schedule_df.loc[schedule_df['date'] == pd.to_datetime(game_date).date(), 'game_id'].iloc[0]
-    # actual_q = _get_line_score(gid)
+    # Retrieve actual quarter splits from DB
+    # Find the game_id matching date
+    sched = get_team_schedule(home.name, season)
+    target_date = pd.to_datetime(game_date).date()
+    matches = sched[sched["date"] == target_date]
+    if matches.empty:
+        actual_splits = {"home": [], "away": []}
+    else:
+        gid = int(matches["game_id"].iloc[0])
+        actual_splits = _get_line_score(gid)
 
-    # Return simulation results
+    # Prepare box scores
+    box_home = [{**p.g, "Player": p.name} for p in home.players]
+    box_away = [{**p.g, "Player": p.name} for p in away.players]
+
     return {
-        "Final Score": score,
-        "Quarter Splits": qsplit,
-        "Box Scores": {
-            home.name: [{**p.g, "Player": p.name} for p in home.players],
-            away.name: [{**p.g, "Player": p.name} for p in away.players]
-        },
+        "Final Score (Simulated)": score,
+        "Simulated Quarter Splits": qsplit_sim,
+        "Actual Quarter Splits": actual_splits,
+        "Box Scores": {home.name: box_home, away.name: box_away},
         "Fatigue Flags": {home.name: fat_h, away.name: fat_a}
     }
