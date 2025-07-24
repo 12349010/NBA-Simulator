@@ -31,5 +31,5 @@ def play_game(cfg: dict, seed: int | None = None):
         "seed": seed,
     }
 
-    # Run simulation
+    # Run simulation and return results
     return simulate_game(home, away, cfg["game_date"], config)
