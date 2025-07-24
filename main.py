@@ -15,4 +15,13 @@ def play_game(cfg:dict, seed:int|None=None):
     season=int(cfg["game_date"][:4])+(1 if int(cfg["game_date"][5:7])>=7 else 0)
     home=_build(cfg["home_team"], cfg["home_starters"], cfg["home_backups"], season, True)
     away=_build(cfg["away_team"], cfg["away_starters"], cfg["away_backups"], season, False)
-    return simulate_game(home, away, cfg["game_date"], cfg.get("fatigue_on",True), seed)
+    config = {
+        "fatigue_on": cfg.get("fatigue_on", True),
+        "seed": seed
+    }
+    return simulate_game(
+        home,
+        away,
+        cfg["game_date"],
+        config
+    )
