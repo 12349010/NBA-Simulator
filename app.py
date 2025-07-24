@@ -1,8 +1,8 @@
 # app.py – NBA Simulator (Engine v0.9.1 – polished UI)
 import streamlit as st, numpy as np, pandas as pd, subprocess, shlex
 from datetime import date
-from nba_sim.data_sqlite import roster as get_roster
-from nba_sim.data_sqlite import get_team_list, team_schedule as get_team_schedule
+from nba_sim.data_sqlite import get_roster
+from nba_sim.data_sqlite import get_team_schedule
 from nba_sim.data_sqlite import played_yesterday
 from nba_sim.data_sqlite import play_by_play
 from nba_sim.utils.injury import get_status
