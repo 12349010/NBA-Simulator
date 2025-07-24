@@ -9,7 +9,7 @@ from nba_sim.data_sqlite import (
     played_yesterday,
     play_by_play
 )
-
+from nba_sim.player_model import Player
 from pathlib import Path
 import sqlite3
 
@@ -41,12 +41,12 @@ def _get_line_score(game_id: int) -> dict[str, list[int]]:
 def simulate_game(home, away, game_date: str, config: dict) -> dict:
     """
     Simulates a 48-minute NBA game between home and away on game_date.
-    Returns simulated results and actual line_score splits.
+    Returns simulated results, actual splits, box scores, and fatigue flags.
     """
     # RNG init
     rng = np.random.default_rng(config.get("seed", None))
 
-    # Season calculation: year if month <7, else year+1 to match season_id
+    # Season calculation: if month>=7 then next year-based season id
     year, month = map(int, game_date.split("-")[:2])
     season = year + (1 if month >= 7 else 0)
 
@@ -54,50 +54,51 @@ def simulate_game(home, away, game_date: str, config: dict) -> dict:
     fat_h = played_yesterday(home.name, game_date)
     fat_a = played_yesterday(away.name, game_date)
 
-    # Load rosters (starters + bench)
-    rost_h = get_roster(home.name, season)
-    rost_a = get_roster(away.name, season)
-    home.players = rost_h["starters"] + rost_h["bench"]
-    away.players = rost_a["starters"] + rost_a["bench"]
+    # Load rosters and instantiate Player objects
+    roster_h = get_roster(home.name, season)
+    home.players = [Player(name, season) for name in roster_h["starters"] + roster_h["bench"]]
+    roster_a = get_roster(away.name, season)
+    away.players = [Player(name, season) for name in roster_a["starters"] + roster_a["bench"]]
 
-    # Quick lineup sets
+    # Define lineups
     lineup_home = home.players[:5]
     lineup_away = away.players[:5]
 
     # Initialize simulation trackers
-    score = {home.name: 0, away.name: 0}
+    score_sim = {home.name: 0, away.name: 0}
     qsplit_sim = {home.name: {i: 0 for i in range(4)}, away.name: {i: 0 for i in range(4)}}
-    clock = 0  # seconds
+    clock = 0  # seconds elapsed
     quarter = 0
 
-    # Possession-driven sim
+    # Run possession-by-possession simulation
     while quarter < 4:
+        # Offense team alternates roughly on clock/24 but can be improved
         off = home if (clock // 24) % 2 == 0 else away
         lineup = lineup_home if off is home else lineup_away
 
-        # Random outcome placeholder
+        # Determine shot outcome based on flat probabilities (placeholder)
         made = rng.random() < 0.45
         is3 = rng.random() < 0.35
         pts = 3 if (made and is3) else (2 if made else 0)
 
+        # Choose shooter and update stats
         shooter = lineup[rng.integers(len(lineup))]
         shooter.shot(made, is3)
         shooter.misc()
-        score[off.name] += pts
+        score_sim[off.name] += pts
         qsplit_sim[off.name][quarter] += pts
 
-        # Advance clock
-        poss = int(rng.integers(4, 23))
-        clock += poss
+        # Advance clock by possession duration
+        poss_time = int(rng.integers(4, 23))
+        clock += poss_time
         for p in lineup:
-            p.minutes_so_far += poss / 60
+            p.minutes_so_far += poss_time / 60
 
-        # Quarter break
+        # Move to next quarter when time threshold met
         if (clock // 60) >= (quarter + 1) * 12 and quarter < 3:
             quarter += 1
 
     # Retrieve actual quarter splits from DB
-    # Find the game_id matching date
     sched = get_team_schedule(home.name, season)
     target_date = pd.to_datetime(game_date).date()
     matches = sched[sched["date"] == target_date]
@@ -107,12 +108,12 @@ def simulate_game(home, away, game_date: str, config: dict) -> dict:
         gid = int(matches["game_id"].iloc[0])
         actual_splits = _get_line_score(gid)
 
-    # Prepare box scores
+    # Build box scores from Player.g stats
     box_home = [{**p.g, "Player": p.name} for p in home.players]
     box_away = [{**p.g, "Player": p.name} for p in away.players]
 
     return {
-        "Final Score (Simulated)": score,
+        "Final Score (Simulated)": score_sim,
         "Simulated Quarter Splits": qsplit_sim,
         "Actual Quarter Splits": actual_splits,
         "Box Scores": {home.name: box_home, away.name: box_away},
