@@ -24,14 +24,20 @@ SIM_RUNS  = [1, 10, 25, 50, 100]
 for k in ["home_team","away_team","home_starters","away_starters","home_bench","away_bench"]:
     st.session_state.setdefault(k,"")
 
-def _fill(side:str):
+def _fill(side: str):
     tm = st.session_state[f"{side}_team"]
     if tm != "— Select —":
-        r = get_roster(tm)
+        # 1) grab the selected game date
+        gd = st.session_state.get("game_date", date.today())
+        # 2) compute the NBA season (year +1 if after July)
+        season = gd.year + (1 if gd.month >= 7 else 0)
+        # 3) now call get_roster with both args
+        r = get_roster(tm, season)
         st.session_state[f"{side}_starters"] = "\n".join(r["starters"])
-        st.session_state[f"{side}_bench"] = "\n".join(r["bench"])
+        st.session_state[f"{side}_bench"]    = "\n".join(r["bench"])
     else:
-        st.session_state[f"{side}_starters"] = st.session_state[f"{side}_bench"] = ""
+        st.session_state[f"{side}_starters"] = ""
+        st.session_state[f"{side}_bench"]    = ""
 
 # ---------- Team inputs ----------
 c1,c2 = st.columns(2)
