@@ -46,7 +46,7 @@ def simulate_game(home, away, game_date: str, config: dict) -> dict:
     # RNG init
     rng = np.random.default_rng(config.get("seed", None))
 
-    # Season calculation: if month>=7 then next year-based season id
+    # Season calculation
     year, month = map(int, game_date.split("-")[:2])
     season = year + (1 if month >= 7 else 0)
 
@@ -60,7 +60,7 @@ def simulate_game(home, away, game_date: str, config: dict) -> dict:
     roster_a = get_roster(away.name, season)
     away.players = [Player(name, season) for name in roster_a["starters"] + roster_a["bench"]]
 
-    # Define lineups
+    # Define lineups (first 5 as starters)
     lineup_home = home.players[:5]
     lineup_away = away.players[:5]
 
@@ -70,32 +70,32 @@ def simulate_game(home, away, game_date: str, config: dict) -> dict:
     clock = 0  # seconds elapsed
     quarter = 0
 
-    # Run possession-by-possession simulation
+    # Possession-by-possession simulation
     while quarter < 4:
-        # Offense team alternates roughly on clock/24 but can be improved
+        # Choose offense team based on possession count
         off = home if (clock // 24) % 2 == 0 else away
         lineup = lineup_home if off is home else lineup_away
 
-        # Determine shot outcome based on flat probabilities (placeholder)
+        # Random shot outcome (placeholder logic)
         made = rng.random() < 0.45
         is3 = rng.random() < 0.35
         pts = 3 if (made and is3) else (2 if made else 0)
 
-        # Choose shooter and update stats
+        # Update shooter stats
         shooter = lineup[rng.integers(len(lineup))]
         shooter.shot(made, is3)
         shooter.misc()
         score_sim[off.name] += pts
         qsplit_sim[off.name][quarter] += pts
 
-        # Advance clock by possession duration
-        poss_time = int(rng.integers(4, 23))
+        # Advance clock by a random possession length
+        poss_time = int(rng.integers(4, 23))  # seconds
         clock += poss_time
         for p in lineup:
             p.minutes_so_far += poss_time / 60
 
-        # Move to next quarter when time threshold met
-        if (clock // 60) >= (quarter + 1) * 12 and quarter < 3:
+        # Advance quarter or end simulation
+        if clock // 60 >= (quarter + 1) * 12:
             quarter += 1
 
     # Retrieve actual quarter splits from DB
@@ -108,7 +108,7 @@ def simulate_game(home, away, game_date: str, config: dict) -> dict:
         gid = int(matches["game_id"].iloc[0])
         actual_splits = _get_line_score(gid)
 
-    # Build box scores from Player.g stats
+    # Build box scores
     box_home = [{**p.g, "Player": p.name} for p in home.players]
     box_away = [{**p.g, "Player": p.name} for p in away.players]
 
