@@ -1,7 +1,7 @@
 from nba_sim.team_model import Team
 from nba_sim.possession_engine import simulate_game
-from nba_sim.data_sqlite import roster as get_roster
-from nba_sim.data_sqlite import get_team_list, team_schedule as get_team_schedule
+from nba_sim.data_sqlite import get_roster
+from nba_sim.data_sqlite import get_team_schedule
 from nba_sim.data_sqlite import played_yesterday
 
 def _build(name, starters, bench, season, home):
