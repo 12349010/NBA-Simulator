@@ -27,11 +27,11 @@ for k in ["home_team","away_team","home_starters","away_starters","home_bench","
 def _fill(side: str):
     tm = st.session_state[f"{side}_team"]
     if tm != "— Select —":
-        # 1) grab the selected game date
+        # get the chosen game date
         gd = st.session_state.get("game_date", date.today())
-        # 2) compute the NBA season (year +1 if after July)
-        season = gd.year + (1 if gd.month >= 7 else 0)
-        # 3) now call get_roster with both args
+        # compute the NBA season start year
+        season = gd.year if gd.month >= 7 else gd.year - 1
+        # now fetch the roster for that season
         r = get_roster(tm, season)
         st.session_state[f"{side}_starters"] = "\n".join(r["starters"])
         st.session_state[f"{side}_bench"]    = "\n".join(r["bench"])
