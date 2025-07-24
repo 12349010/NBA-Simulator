@@ -33,7 +33,12 @@ def _get_line_score(game_id: int) -> dict[str, list[int]]:
         raise ValueError(f"No line_score entry for game_id={game_id}")
     row = df.iloc[0]
     return {
-        "home": [int(row[f"pts_qtr{i}_home"]) for i in range(1,5)],
+        "Final Score": score_sim,
+        "Simulated Quarter Splits": qsplit_sim,
+        "Actual Quarter Splits": actual_splits,
+        "Box Scores": {home.name: box_home, away.name: box_away},
+        "Fatigue Flags": {home.name: fat_h, away.name: fat_a}
+    }_home"]) for i in range(1,5)],
         "away": [int(row[f"pts_qtr{i}_away"]) for i in range(1,5)]
     }
 
