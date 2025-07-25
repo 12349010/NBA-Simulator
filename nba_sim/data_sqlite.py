@@ -20,7 +20,7 @@ def ensure_db():
             import gdown
             print("Attempting to download via gdown...")
             DATA_DIR.mkdir(exist_ok=True)
-            # Note: use the 'uc?id=' format, not the '/file/d/.../view' URL
+            # Use the uc?id= format for gdown
             url = "https://drive.google.com/uc?id=1vvpcwTK6s11d8i5Cpb_sAAKN86AFaKjx"
             gdown.download(url, str(DB_PATH), quiet=False)
         except Exception as e:
@@ -58,7 +58,6 @@ def get_player_id(display_name: str, season: int) -> int:
 
 def get_roster(team_name: str, season: int) -> dict:
     con = sqlite3.connect(DB_PATH)
-    # get team_id
     td = pd.read_sql(
         "SELECT id FROM team WHERE full_name = ?", con, params=(team_name,)
     )
@@ -67,7 +66,7 @@ def get_roster(team_name: str, season: int) -> dict:
         raise ValueError(f"No team record for {team_name!r}")
     team_id = int(td["id"].iloc[0])
 
-    # primary roster pull
+    # Primary roster pull
     q1 = """
     SELECT DISTINCT display_first_last AS name
       FROM common_player_info
@@ -77,7 +76,7 @@ def get_roster(team_name: str, season: int) -> dict:
     df1 = pd.read_sql(q1, con, params=(team_id, season))
     names = df1["name"].dropna().tolist()
 
-    # fallback to active rosterstatus
+    # Fallback to active rosterstatus
     if not names:
         q2 = """
         SELECT DISTINCT display_first_last AS name
@@ -88,13 +87,13 @@ def get_roster(team_name: str, season: int) -> dict:
         df2 = pd.read_sql(q2, con, params=(team_id,))
         names = df2["name"].dropna().tolist()
 
-    # final fallback to inactive_players
+    # Final fallback to inactive_players
     if not names:
         df3 = pd.read_sql(
             "SELECT first_name, last_name FROM inactive_players WHERE team_id = ?",
             con, params=(team_id,)
         )
-        names = [f\"{r['first_name']} {r['last_name']}\" for _, r in df3.iterrows()]
+        names = [f"{r['first_name']} {r['last_name']}" for _, r in df3.iterrows()]
 
     con.close()
     return {"starters": names, "bench": []}
