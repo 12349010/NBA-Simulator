@@ -1,161 +1,134 @@
-# app.py – NBA Simulator (Engine v0.9.1 – polished UI)
-import streamlit as st, numpy as np, pandas as pd, subprocess, shlex
+# app.py
+
+import streamlit as st
+import pandas as pd
+import numpy as np
 from datetime import date
-from nba_sim.data_sqlite import (
-    get_team_list,      # for populating your team dropdown
-    get_roster,         # to fetch starters & bench
-    get_team_schedule,  # for fatigue / schedule lookups
-    played_yesterday,   # to check back‑to‑back games
-    play_by_play        # (if/when you need play‑by‑play data)
-)
+
+from nba_sim.data_sqlite import get_team_list
 from nba_sim.utils.injury import get_status
 from nba_sim import calibration as calib, weights as W
 from main import play_game
 
+# --------------------------------------------
+# Page config & version
+# --------------------------------------------
+st.set_page_config(page_title="NBA 48‑Min Simulator", layout="wide")
 ENGINE_VERSION = "v0.9.1"
+st.sidebar.markdown(f"**Engine v{ENGINE_VERSION}**")
 
-st.set_page_config(page_title="NBA Game Sim", layout="wide")
-st.markdown(f"## 🏀 48‑Minute NBA Simulator &nbsp;|&nbsp; *{ENGINE_VERSION}*")
+# --------------------------------------------
+# Sidebar controls
+# --------------------------------------------
+teams = get_team_list()
+home_team = st.sidebar.selectbox("Home Team", teams)
+away_team = st.sidebar.selectbox("Away Team", [t for t in teams if t != home_team])
 
-TEAM_OPTS = ["— Select —"] + get_team_list()
-SIM_RUNS  = [1, 10, 25, 50, 100]
+game_date = st.sidebar.date_input(
+    "Game Date",
+    value=date.today()
+).strftime("%Y-%m-%d")
 
-# ---------- Session ----------
-for k in ["home_team","away_team","home_starters","away_starters","home_bench","away_bench"]:
-    st.session_state.setdefault(k,"")
+sim_runs = st.sidebar.number_input(
+    "Number of simulations",
+    min_value=1,
+    value=100,
+    step=1
+)
 
-def _fill(side: str):
-    tm = st.session_state[f"{side}_team"]
-    if tm != "— Select —":
-        # get the chosen game date
-        gd = st.session_state.get("game_date", date.today())
-        # compute the NBA season start year
-        season = gd.year if gd.month >= 7 else gd.year - 1
-        # now fetch the roster for that season
-        r = get_roster(tm, season)
-        st.session_state[f"{side}_starters"] = "\n".join(r["starters"])
-        st.session_state[f"{side}_bench"]    = "\n".join(r["bench"])
-    else:
-        st.session_state[f"{side}_starters"] = ""
-        st.session_state[f"{side}_bench"]    = ""
+fatigue_on = st.sidebar.checkbox(
+    "Apply fatigue (back‑to‑back)",
+    value=True
+)
 
-# ---------- Team inputs ----------
-c1,c2 = st.columns(2)
-with c1:
-    st.selectbox("Home team", TEAM_OPTS, key="home_team", on_change=_fill, args=("home",))
-    st.text_area("Starters", key="home_starters", height=120)
-    st.text_area("Bench",    key="home_bench",    height=120)
-with c2:
-    st.selectbox("Away team", TEAM_OPTS, key="away_team", on_change=_fill, args=("away",))
-    st.text_area("Starters", key="away_starters", height=120)
-    st.text_area("Bench",    key="away_bench",    height=120)
+# Optional: show current injury status
+if st.sidebar.checkbox("Show injuried players"):
+    st.sidebar.write(f"**{home_team} Injuries:**", get_status(home_team))
+    st.sidebar.write(f"**{away_team} Injuries:**", get_status(away_team))
 
-# ---------- OPTIONS PANEL ----------
-with st.expander("🎛️  Simulation Options", expanded=True):
+# Calibration controls
+calibrate = st.sidebar.checkbox("Calibrate to actual", value=False)
+if calibrate:
+    game_id_input = st.sidebar.text_input("Game ID for calibration", "")
+    if st.sidebar.button("Run Calibration"):
+        try:
+            cal_results = calib.calibrate(
+                int(game_id_input),
+                {
+                    "home_team": home_team,
+                    "away_team": away_team,
+                    "game_date": game_date,
+                    "fatigue_on": fatigue_on
+                }
+            )
+            st.sidebar.write("**Calibration Results**", cal_results)
+        except Exception as e:
+            st.sidebar.error(f"Calibration error: {e}")
 
-    # -- basic options -----------------------
-    sim_runs   = st.selectbox("Simulations to run",
-                              options=[1, 10, 25, 50, 100], index=3)
-    fatigue_on = st.checkbox("Apply travel‑fatigue (auto back‑to‑back)",
-                             value=True)
-
-    # -- advanced calibration ---------------
-    with st.expander("Advanced settings · Calibrator", expanded=False):
-        st.markdown(
-            "📐 **Calibrator** lets the engine tune its internal weight matrix "
-            "so that simulated final scores match a *real* past game as closely "
-            "as possible.\n\n"
-            "* **Auto** – uses Basketball‑Reference data for the chosen matchup & date*\n"
-            "* **Manual** – you type the actual score\n"
-            "* **No** – skip calibration entirely"
-        )
-
-        cal_mode = st.radio("Calibrate?", ["No", "Auto", "Manual"],
-                            horizontal=True)
-
-        if cal_mode == "Manual":
-            act_home   = st.number_input("Actual home score", value=0)
-            act_away   = st.number_input("Actual away score", value=0)
-            cal_trials = st.slider("Calibration trials", 5, 50, 25)
-
-game_date = st.date_input("Game date", value=date.today())
-
-# ---------- Simulate ----------
-if st.button("▶️  Simulate"):
-    if "— Select —" in (st.session_state.home_team, st.session_state.away_team):
-        st.error("Pick both teams first."); st.stop()
-
+# --------------------------------------------
+# Main simulation trigger
+# --------------------------------------------
+if st.sidebar.button("Run Simulations"):
     cfg = {
-        "game_date": str(game_date),
-        "home_team": st.session_state.home_team,
-        "away_team": st.session_state.away_team,
-        "home_starters":[p for p in st.session_state.home_starters.splitlines() if p],
-        "away_starters":[p for p in st.session_state.away_starters.splitlines() if p],
-        "home_backups":[p for p in st.session_state.home_bench.splitlines() if p],
-        "away_backups":[p for p in st.session_state.away_bench.splitlines() if p],
-        "fatigue_on": fatigue_on,
+        "home_team": home_team,
+        "away_team": away_team,
+        "game_date": game_date,
+        "fatigue_on": fatigue_on
     }
 
-    # run sims
-    res_h,res_a,boxes_h,boxes_a=[],[],[],[]
+    res_h, res_a = [], []
+    boxes_h, boxes_a = [], []
     bar = st.progress(0.0)
+
+    # Monte‑Carlo runs
     for i in range(sim_runs):
         g = play_game(cfg, seed=i)
-        res_h.append(g["Final Score"][cfg["home_team"]])
-        res_a.append(g["Final Score"][cfg["away_team"]])
-        boxes_h.append(pd.DataFrame(g["Box Scores"][cfg["home_team"]]))
-        boxes_a.append(pd.DataFrame(g["Box Scores"][cfg["away_team"]]))
-        bar.progress((i+1)/sim_runs)
+        res_h.append(g["Final Score"][home_team])
+        res_a.append(g["Final Score"][away_team])
+        boxes_h.append(pd.DataFrame(g["Box Scores"][home_team]))
+        boxes_a.append(pd.DataFrame(g["Box Scores"][away_team]))
+        bar.progress((i + 1) / sim_runs)
 
+    # --------------------------------------------
+    # Summary stats
+    # --------------------------------------------
+    home_avg = np.mean(res_h)
+    away_avg = np.mean(res_a)
+    home_wins = sum(1 for h, a in zip(res_h, res_a) if h > a)
+    win_pct = 100 * home_wins / sim_runs
+
+    st.subheader("Simulation Summary")
+    st.write({
+        f"{home_team} avg": round(home_avg, 1),
+        f"{away_team} avg": round(away_avg, 1),
+        f"{home_team} win %": f"{win_pct:.1f}%"
+    })
+
+    # Score distribution chart
+    df_scores = pd.DataFrame({home_team: res_h, away_team: res_a})
+    st.bar_chart(df_scores)
+
+    # --------------------------------------------
+    # Sample Box Scores
+    # --------------------------------------------
+    st.subheader("Sample Box Scores (Last Simulation)")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.write(f"**{home_team} Box**")
+        st.dataframe(boxes_h[-1], use_container_width=True)
+    with col2:
+        st.write(f"**{away_team} Box**")
+        st.dataframe(boxes_a[-1], use_container_width=True)
+
+    # --------------------------------------------
+    # Play‑by‑Play Log
+    # --------------------------------------------
     if "Play Log" in g:
-    with st.expander("Play‑by‑Play Log"):
-        for e in g["Play Log"]:
-            st.write(
-                f\"Q{e['quarter']} {e['time']} — {e['team']}: "
-                f\"{e['player']} {e['action']} (+{e['points']} pts)\"
-            )
-
-    # optional calibration
-    if 'enable_cal' in locals() and enable_cal and (act_home or act_away):
-        W.save(W.DEFAULT)
-        new_w,best_err = calib.calibrate(cfg, act_home, act_away, cal_trials)
-        st.sidebar.success(f"Calibrator MAE ≈ {best_err:.2f}")
-        st.sidebar.json(new_w,expanded=False)
-
-    # ---------- Sidebar: injuries + fatigue + defense ----------
-    with st.sidebar:
-        st.subheader("Game context")
-        for pl in cfg["home_starters"]+cfg["away_starters"]:
-            st.write(f"{pl}: **{get_status(pl)}**")
-        if g["Fatigue Flags"][cfg["home_team"]]:
-            st.write(f"💤 {cfg['home_team']} on back‑to‑back")
-        if g["Fatigue Flags"][cfg["away_team"]]:
-            st.write(f"💤 {cfg['away_team']} on back‑to‑back")
-
-    # ---------- Display ----------
-    avg_h,avg_a = np.mean(res_h), np.mean(res_a)
-    st.markdown(
-        f"<h2 style='text-align:center;margin-top:0;'>"
-        f"{cfg['home_team']} {avg_h:.0f} – {avg_a:.0f} {cfg['away_team']}"
-        f"</h2>",
-        unsafe_allow_html=True)
-
-    def _as_int(df):
-        out=df.copy(); nums=out.select_dtypes("number").columns
-        out[nums]=out[nums].astype(int); return out
-
-    ch,ca=st.columns(2)
-    with ch:
-        st.subheader(f"{cfg['home_team']} Box (avg)")
-        st.dataframe(_as_int(pd.concat(boxes_h).groupby("Player").mean().round(0)),use_container_width=True)
-    with ca:
-        st.subheader(f"{cfg['away_team']} Box (avg)")
-        st.dataframe(_as_int(pd.concat(boxes_a).groupby("Player").mean().round(0)),use_container_width=True)
-
-# ---------- footer ----------
-st.markdown(
-    "<div style='text-align:center;color:gray;margin-top:2rem;font-size:0.8em;'>"
-    f"Engine {ENGINE_VERSION} – Git { subprocess.check_output(shlex.split('git rev-parse --short HEAD')).decode().strip() }"
-    "</div>",
-    unsafe_allow_html=True
-)
+        with st.expander("Play‑by‑Play Log", expanded=False):
+            for e in g["Play Log"]:
+                assist_part = f", AST by {e.get('assist')}" if e.get('assist') else ""
+                st.write(
+                    f"Q{e['quarter']} {e['time']} — {e['team']}: "
+                    f"{e['player']} {e['action']} (+{e['points']} pts), "
+                    f"REB {e['rebound']}{assist_part}"
+                )
