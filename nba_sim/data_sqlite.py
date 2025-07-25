@@ -10,21 +10,24 @@ DATA_DIR = Path(__file__).parent.parent / "data"
 DB_PATH  = DATA_DIR / "nba.sqlite"
 
 def ensure_db():
+    """
+    Ensures nba.sqlite exists locally.
+    If missing or empty, download via the Drive 'export=download' endpoint.
+    """
     if not DB_PATH.exists() or DB_PATH.stat().st_size == 0:
-        print("⚠️  nba.sqlite not found locally.")
+        print("⚠️  nba.sqlite not found locally; attempting auto-download…")
         try:
             import gdown
-            print("Downloading nba.sqlite via Google Drive link…")
             DATA_DIR.mkdir(exist_ok=True)
-            # ← correct link for gdown
-            url = "https://drive.google.com/uc?id=1vvpcwTK6s11d8i5Cpb_sAAKN86AFaKjx"
-            gdown.download(url, str(DB_PATH), quiet=False)
+            # Use the 'export=download' URL and fuzzy=True to let gdown handle large-file confirm tokens.
+            url = "https://drive.google.com/uc?export=download&id=1vvpcwTK6s11d8i5Cpb_sAAKN86AFaKjx"
+            gdown.download(url, str(DB_PATH), quiet=False, fuzzy=True)
         except Exception as e:
-            print(f"Download failed: {e}")
+            print(f"\n❗ Auto‑download failed: {e}")
             print("Please manually download from:")
             print("  https://drive.google.com/file/d/1vvpcwTK6s11d8i5Cpb_sAAKN86AFaKjx/view?usp=sharing")
-            print(f"and save to {DB_PATH}")
-            raise SystemExit("nba.sqlite is required.")
+            print(f"and save it as {DB_PATH!r}")
+            raise SystemExit("nba.sqlite is required to run the simulator.")
 
 # Run this at import time
 ensure_db()
