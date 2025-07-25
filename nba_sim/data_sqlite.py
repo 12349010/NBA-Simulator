@@ -1,21 +1,15 @@
-# nba_sim/data_sqlite.py
-
 import sqlite3
 import pandas as pd
 from pathlib import Path
 
-# Path to the local SQLite file; we expect it at data/nba.sqlite
 DB_PATH = Path(__file__).parent.parent / "data" / "nba.sqlite"
-
 if not DB_PATH.exists() or DB_PATH.stat().st_size == 0:
     raise FileNotFoundError(
-        f"Cannot find nba.sqlite at {DB_PATH!r}.\n"
-        "Make sure you have placed the file there (see README)."
+        f"Cannot find nba.sqlite at {DB_PATH!r}. "
+        "It should be downloaded by your Dev Container setup."
     )
 
-
 def get_team_list() -> list[str]:
-    """Return sorted list of all team full_names."""
     con = sqlite3.connect(DB_PATH)
     df = pd.read_sql("SELECT full_name FROM team ORDER BY full_name", con)
     con.close()
