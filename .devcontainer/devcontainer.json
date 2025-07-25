@@ -3,30 +3,19 @@
   "image": "mcr.microsoft.com/devcontainers/python:1-3.11-bullseye",
   "customizations": {
     "codespaces": {
-      "openFiles": [
-        "README.md",
-        "app.py"
-      ]
+      "openFiles": ["README.md","app.py"]
     },
     "vscode": {
       "settings": {},
-      "extensions": [
-        "ms-python.python",
-        "ms-python.vscode-pylance"
-      ]
+      "extensions": ["ms-python.python","ms-python.vscode-pylance"]
     }
   },
-  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y unzip curl && pip3 install --no-warn-script-location --user -r requirements.txt streamlit gdown && bash .devcontainer/download_db.sh",
+  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y unzip curl sqlite3 && pip3 install --no-warn-script-location --user -r requirements.txt streamlit gdown && bash .devcontainer/download_db.sh",
   "postAttachCommand": {
     "server": "streamlit run app.py --server.enableCORS false --server.enableXsrfProtection false"
   },
-  "forwardPorts": [
-    8501
-  ],
+  "forwardPorts": [8501],
   "portsAttributes": {
-    "8501": {
-      "label": "Application",
-      "onAutoForward": "openPreview"
-    }
+    "8501": { "label": "Application", "onAutoForward": "openPreview" }
   }
 }
