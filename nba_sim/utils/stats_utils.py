@@ -1,66 +1,70 @@
-from dataclasses import dataclass, field
-from nba_sim.utils.stats_utils import stats_provider
-from nba_sim.data_sqlite import get_player_id
+import sqlite3
+import pandas as pd
+from pathlib import Path
 
-@dataclass
-class Player:
+class StatsProvider:
     """
-    Represents an NBA player with precomputed historical probabilities and in-game stats.
+    Provides historical statistics for NBA players from the SQLite DB.
     """
-    id: int
-    name: str
-    season: int
-    position: str = None
-    height: float = None
-    weight: float = None
 
-    # Historical event probabilities (initialized in __post_init__)
-    fg_pct: float = field(init=False)
-    three_pct: float = field(init=False)
-    three_prop: float = field(init=False)
-    reb_rate: float = field(init=False)
+    def __init__(self, db_path: Path):
+        self.db_path = db_path
 
-    # In-game stat tracking
-    g: dict = field(default_factory=lambda: {
-        'minutes': 0.0,
-        'points': 0,
-        'rebounds': 0,
-        'assists': 0,
-        'field_goals': 0,
-        'three_points': 0,
-        'two_points': 0
-    })
-    minutes_so_far: float = 0.0
+    def _connect(self):
+        return sqlite3.connect(self.db_path)
 
-    def __post_init__(self):
-        # Ensure we have a valid player ID
-        if self.id is None:
-            self.id = get_player_id(self.name, self.season)
-        # Load shooting probabilities
-        stats = stats_provider.get_player_shooting(self.id, self.season)
-        self.fg_pct = stats['fg_pct']
-        self.three_pct = stats['three_pct']
-        self.three_prop = stats['three_prop']
-        # Load rebounding probabilities
-        reb_stats = stats_provider.get_player_rebounding(self.id, self.season)
-        self.reb_rate = reb_stats['reb_rate']
-
-    def shot(self, made: bool, is3: bool):
+    def get_player_shooting(self, player_id: int, season: int) -> dict:
         """
-        Record a shot attempt and update scoring stats.
+        Returns a dict with:
+          - 'fg_pct': field goal percentage
+          - 'three_pct': three-point percentage
+          - 'three_prop': proportion of attempts that are threes
         """
-        self.g['field_goals'] += 1
-        if made:
-            pts = 3 if is3 else 2
-            self.g['points'] += pts
-            if is3:
-                self.g['three_points'] += 1
-            else:
-                self.g['two_points'] += 1
+        con = self._connect()
+        query = '''
+        SELECT
+          SUM(CASE WHEN eventmsgtype=1 THEN 1 ELSE 0 END)          AS made,
+          SUM(CASE WHEN eventmsgtype IN (1,2) THEN 1 ELSE 0 END)   AS att,
+          SUM(CASE WHEN eventmsgtype=1 AND (homedescription LIKE '%3PT%' OR visitordescription LIKE '%3PT%') THEN 1 ELSE 0 END) AS made3,
+          SUM(CASE WHEN eventmsgtype IN (1,2) AND (homedescription LIKE '%3PT%' OR visitordescription LIKE '%3PT%') THEN 1 ELSE 0 END) AS att3
+        FROM play_by_play
+        WHERE player1_id = ? AND period BETWEEN 1 AND 4
+        '''
+        df = pd.read_sql(query, con, params=(player_id,))
+        con.close()
 
-    def misc(self):
+        row = df.iloc[0]
+        made, att, made3, att3 = row['made'], row['att'], row['made3'], row['att3']
+        fg_pct     = made / att  if att  > 0 else 0.45
+        three_pct  = made3 / att3 if att3 > 0 else 0.35
+        three_prop = att3  / att  if att  > 0 else 0.30
+        return {'fg_pct': fg_pct, 'three_pct': three_pct, 'three_prop': three_prop}
+
+    def get_player_rebounding(self, player_id: int, season: int) -> dict:
         """
-        Placeholder for additional stats (rebounds, assists, etc.)
-        Extend this to simulate events based on probabilities.
+        Returns rebounding rates:
+          - 'reb_rate': chance to secure a rebound on any rebound opportunity
         """
-        pass
+        con = self._connect()
+        query = '''
+        SELECT 
+          SUM(CASE WHEN eventmsgtype IN (4,5) THEN 1 ELSE 0 END) AS rebs,
+          COUNT(DISTINCT game_id)                                  AS games
+        FROM play_by_play
+        WHERE player1_id = ?
+        '''
+        df = pd.read_sql(query, con, params=(player_id,))
+        con.close()
+
+        row = df.iloc[0]
+        rebs, games = row['rebs'], row['games']
+        if games > 0:
+            # rough approximation: assume ~100 rebound chances per game
+            reb_rate = min(1.0, (rebs / games) / 100)
+        else:
+            reb_rate = 0.15
+        return {'reb_rate': reb_rate}
+
+# Instantiate a single provider for import elsewhere
+DB_PATH = Path(__file__).parent.parent / 'data' / 'nba.sqlite'
+stats_provider = StatsProvider(DB_PATH)
