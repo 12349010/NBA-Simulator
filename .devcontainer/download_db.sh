@@ -1,19 +1,32 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# File ID from your Google Drive link
-FILE_ID="1vvpcwTK6s11d8i5Cpb_sAAKN86AFaKjx"
-OUT="data/nba.sqlite"
+# 1) URL of your newly uploaded dump ZIP
+URL="https://github.com/12349010/NBA-Simulator/releases/download/db-sql-v1/nba_dump.zip"
 
-echo "💾 Downloading nba.sqlite into ${OUT} …"
-mkdir -p "$(dirname "${OUT}")"
+OUT_DIR="data"
+ZIP_PATH="${OUT_DIR}/nba_dump.zip"
+SQL_PATH="${OUT_DIR}/nba.sqlite"
 
-# Use Python's gdown module to handle the Drive confirm-token for large files
+echo "💾 Downloading SQL dump…"
+mkdir -p "${OUT_DIR}"
+curl -L "$URL" -o "${ZIP_PATH}"
+
+echo "📦 Unzipping…"
 python3 - <<PYCODE
-import gdown
-url = f"https://drive.google.com/uc?export=download&id={FILE_ID}"
-print(f"→ gdown downloading from: {url}")
-gdown.download(url, "$OUT", quiet=False)
+import zipfile, os
+from pathlib import Path
+
+zip_path = Path(r"${ZIP_PATH}")
+out_dir  = Path(r"${OUT_DIR}")
+out_sql  = out_dir / "dump.sql"
+
+with zipfile.ZipFile(zip_path, 'r') as z:
+    z.extractall(path=out_dir)
+
+# Rename extracted dump.sql → nba.sqlite
+os.rename(out_dir / "dump.sql", out_dir / "nba.sqlite")
+print("✅ Created", out_dir / "nba.sqlite")
 PYCODE
 
-echo "✅ Download complete: $(ls -lh "${OUT}")"
+echo "📂 Final check: $(ls -lh "${SQL_PATH}")"
