@@ -1,99 +1,58 @@
-"""
-calibration.py – weight‑tuner for NBA sim engine
-------------------------------------------------
-Usage:
-
-    best_w, mae = calibrate(cfg, auto=True)                   # auto score lookup
-    best_w, mae = calibrate(cfg, actual_home=101, actual_away=98, cal_trials=30)
-"""
-from __future__ import annotations
-import random, copy, json, pathlib
-from typing import Tuple
 import numpy as np
+import pandas as pd
+from pathlib import Path
+import sqlite3
 
+# Path to the SQLite DB
+data_path = Path(__file__).parent.parent / "data" / "nba.sqlite"
+
+# Weights module for calibration parameters
 from nba_sim import weights as W
-from nba_sim.past_games_live import get_score
-from main import play_game
 
 
-DEFAULT_TRIALS = 25
-RADIUS = 0.10                 # ±10 % per weight
-
-
-def _sample_weights(base: dict[str, float]) -> dict[str, float]:
-    """Return a dict with each weight adjusted ±RADIUS% randomly."""
-    return {k: v * (1 + random.uniform(-RADIUS, RADIUS)) for k, v in base.items()}
-
-
-def _mae(pred_home: float, pred_away: float, true_home: float, true_away: float) -> float:
-    return abs(pred_home - true_home) + abs(pred_away - true_away) / 2
-
-
-def calibrate(
-    cfg: dict,
-    *,
-    auto: bool = False,
-    actual_home: int | None = None,
-    actual_away: int | None = None,
-    cal_trials: int = DEFAULT_TRIALS,
-) -> Tuple[dict[str, float], float]:
+def _get_actual_score(game_id: int) -> tuple[int, int]:
     """
-    Returns (best_weight_dict, best_mae).
-    cfg is the same dict passed to play_game().
+    Returns the actual final scores (home_pts, away_pts) from the game table for calibration.
     """
-
-    # ---------- 1. determine target score ----------
-    if auto:
-        scr = get_score(cfg["home_team"], cfg["away_team"], cfg["game_date"])
-        if scr is None:
-            raise ValueError("Could not locate real score for that matchup/date.")
-        target_home, target_away = scr["home"], scr["away"]
-    else:
-        if actual_home is None or actual_away is None:
-            raise ValueError("Provide actual_home & actual_away or use auto=True.")
-        target_home, target_away = actual_home, actual_away
-
-    # ---------- 2. search weight space ----------
-    best_err = float("inf")
-    best_w = copy.deepcopy(W.DEFAULT)
-
-    for _ in range(cal_trials):
-        test_w = _sample_weights(W.DEFAULT)
-        W.save(test_w)
-
-        g = play_game(cfg, seed=random.randint(0, 999_999))
-        pred_home = g["Final Score"][cfg["home_team"]]
-        pred_away = g["Final Score"][cfg["away_team"]]
-
-        err = _mae(pred_home, pred_away, target_home, target_away)
-        if err < best_err:
-            best_err = err
-            best_w = test_w
-
-    # ---------- 3. persist best weights ----------
-    W.save(best_w)
-    _persist(best_w, best_err, cfg, target_home, target_away)
-    return best_w, best_err
+    con = sqlite3.connect(data_path)
+    df = pd.read_sql(
+        "SELECT pts_home, pts_away FROM game WHERE game_id = ?", con,
+        params=(game_id,)
+    )
+    con.close()
+    if df.empty:
+        raise ValueError(f"No game entry for game_id={game_id}")
+    row = df.iloc[0]
+    return int(row["pts_home"]), int(row["pts_away"])
 
 
-# ---------- simple persistence ----------
-CALIB_LOG = pathlib.Path(__file__).with_name("calib_history.json")
+def calibrate(game_id: int, config: dict) -> dict:
+    """
+    Runs the simulator against a real game and computes calibration adjustments.
+    Returns dict with 'sim_score', 'actual_score', and 'adjustments'.
+    """
+    # Run simulation (uses main.play_game underneath)
+    sim = play_game({
+        "home_team": config["home_team"],
+        "away_team": config["away_team"],
+        "game_date": config["game_date"],
+        "fatigue_on": config.get("fatigue_on", True)
+    }, seed=config.get("seed", None))
 
+    sim_score = sim["Final Score"]
+    actual_score = _get_actual_score(game_id)
 
-def _persist(w: dict[str, float], mae: float, cfg: dict, th: int, ta: int):
-    rec = {
-        "cfg": {
-            "date": cfg["game_date"],
-            "home": cfg["home_team"],
-            "away": cfg["away_team"],
-        },
-        "target": {"home": th, "away": ta},
-        "mae": round(mae, 3),
-        "weights": w,
+    # Compute point differentials
+    diff_sim = sim_score[config["home_team"]] - sim_score[config["away_team"]]
+    diff_act = actual_score[0] - actual_score[1]
+
+    # Simple linear adjustment factor
+    factor = diff_act / diff_sim if diff_sim != 0 else 1.0
+
+    # Return calibration results
+    return {
+        "sim_score": sim_score,
+        "actual_score": actual_score,
+        "adjustment_factor": factor,
+        "weights_used": W.get_weights()
     }
-
-    hist = []
-    if CALIB_LOG.exists():
-        hist = json.loads(CALIB_LOG.read_text())
-    hist.append(rec)
-    CALIB_LOG.write_text(json.dumps(hist, indent=2))
