@@ -10,11 +10,13 @@ from nba_sim.data_sqlite import (
     play_by_play
 )
 from nba_sim.player_model import Player
+from nba_sim.utils.roster_utils import assign_lineup
 from pathlib import Path
 import sqlite3
 
 # Path to the SQLite DB
 DB_PATH = Path(__file__).parent.parent / "data" / "nba.sqlite"
+
 
 def _get_line_score(game_id: int) -> dict[str, list[int]]:
     """
@@ -24,8 +26,7 @@ def _get_line_score(game_id: int) -> dict[str, list[int]]:
     con = sqlite3.connect(DB_PATH)
     cols = [f"pts_qtr{i}_home" for i in range(1,5)] + [f"pts_qtr{i}_away" for i in range(1,5)]
     df = pd.read_sql(
-        f"SELECT {', '.join(cols)} FROM line_score WHERE game_id = ?",
-        con,
+        f"SELECT {', '.join(cols)} FROM line_score WHERE game_id = ?", con,
         params=(game_id,)
     )
     con.close()
@@ -37,10 +38,18 @@ def _get_line_score(game_id: int) -> dict[str, list[int]]:
         "away": [int(row[f"pts_qtr{i}_away"]) for i in range(1,5)]
     }
 
+
 def simulate_game(home, away, game_date: str, config: dict) -> dict:
     """
     Simulates a 48-minute NBA game between home and away on game_date.
-    Returns simulated results, actual splits, box scores, and fatigue flags.
+    Automatically assigns starters vs bench, rotates bench into play, and returns stats.
+
+    Returns dict with:
+      - "Final Score"
+      - "Simulated Quarter Splits"
+      - "Actual Quarter Splits"
+      - "Box Scores"
+      - "Fatigue Flags"
     """
     # RNG init
     rng = np.random.default_rng(config.get("seed", None))
@@ -54,28 +63,37 @@ def simulate_game(home, away, game_date: str, config: dict) -> dict:
     fat_a = played_yesterday(away.name, game_date)
 
     # Load rosters and instantiate Player objects
-    roster_h = get_roster(home.name, season)
-    home.players = [Player(name, season) for name in roster_h["starters"] + roster_h["bench"]]
-    roster_a = get_roster(away.name, season)
-    away.players = [Player(name, season) for name in roster_a["starters"] + roster_a["bench"]]
+    raw_h = get_roster(home.name, season)
+    home.players = [Player(name, season) for name in raw_h["starters"] + raw_h["bench"]]
+    raw_a = get_roster(away.name, season)
+    away.players = [Player(name, season) for name in raw_a["starters"] + raw_a["bench"]]
 
-    # Define lineups (first 5 as starters)
-    lineup_home = home.players[:5]
-    lineup_away = away.players[:5]
+    # Assign smart starters vs bench
+    home.starters, home.bench = assign_lineup(home.players)
+    away.starters, away.bench = assign_lineup(away.players)
 
-    # Initialize simulation trackers
+    # Working lineups (modifiable for rotation)
+    lineup_home = home.starters.copy()
+    lineup_away = away.starters.copy()
+
+    # Simulation trackers
     score_sim = {home.name: 0, away.name: 0}
     qsplit_sim = {home.name: {i: 0 for i in range(4)}, away.name: {i: 0 for i in range(4)}}
     clock = 0  # seconds elapsed
     quarter = 0
 
+    # Bench rotation every 6 minutes of game time
+    SUB_FREQ = 6 * 60
+    next_sub_time_h = SUB_FREQ
+    next_sub_time_a = SUB_FREQ
+
     # Possession-by-possession simulation
     while quarter < 4:
-        # Choose offense team based on possession count
+        # Choose offense team
         off = home if (clock // 24) % 2 == 0 else away
         lineup = lineup_home if off is home else lineup_away
 
-        # Random shot outcome (placeholder logic)
+        # Random shot outcome (placeholder probabilities)
         made = rng.random() < 0.45
         is3 = rng.random() < 0.35
         pts = 3 if (made and is3) else (2 if made else 0)
@@ -87,21 +105,38 @@ def simulate_game(home, away, game_date: str, config: dict) -> dict:
         score_sim[off.name] += pts
         qsplit_sim[off.name][quarter] += pts
 
-        # Advance clock by a random possession length
-        poss_time = int(rng.integers(4, 23))  # seconds
+        # Advance clock
+        poss_time = int(rng.integers(4, 23))
         clock += poss_time
         for p in lineup:
             p.minutes_so_far += poss_time / 60
 
-        # Advance quarter or end simulation
+        # Handle bench substitutions
+        # Home substitutions
+        if clock >= next_sub_time_h and home.bench:
+            out = rng.choice(lineup_home)
+            inp = rng.choice(home.bench)
+            idx = lineup_home.index(out)
+            lineup_home[idx] = inp
+            home.bench[home.bench.index(inp)] = out
+            next_sub_time_h += SUB_FREQ
+        # Away substitutions (use same clock)
+        if clock >= next_sub_time_a and away.bench:
+            out = rng.choice(lineup_away)
+            inp = rng.choice(away.bench)
+            idx = lineup_away.index(out)
+            lineup_away[idx] = inp
+            away.bench[away.bench.index(inp)] = out
+            next_sub_time_a += SUB_FREQ
+
+        # Advance quarter
         if clock // 60 >= (quarter + 1) * 12:
             quarter += 1
 
-    # Retrieve actual quarter splits from DB
+    # Retrieve actual quarter splits
     sched = get_team_schedule(home.name, season)
     target_date = pd.to_datetime(game_date).date()
-    matches = sched[sched["date"] ==
-                      target_date]
+    matches = sched[sched["date"] == target_date]
     if matches.empty:
         actual_splits = {"home": [], "away": []}
     else:
