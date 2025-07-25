@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# 1) URL of your newly uploaded dump ZIP
+# 1) URL of your compressed dump asset on GitHub Releases
 URL="https://github.com/12349010/NBA-Simulator/releases/download/db-sql-v1/nba_dump.zip"
 
 OUT_DIR="data"
@@ -10,7 +10,7 @@ SQL_PATH="${OUT_DIR}/nba.sqlite"
 
 echo "💾 Downloading SQL dump…"
 mkdir -p "${OUT_DIR}"
-curl -L "$URL" -o "${ZIP_PATH}"
+curl -L "${URL}" -o "${ZIP_PATH}"
 
 echo "📦 Unzipping…"
 python3 - <<PYCODE
