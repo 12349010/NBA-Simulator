@@ -1,5 +1,11 @@
 # app.py
 
+print(">>> Starting app.py <<<")
+import streamlit as st
+print(">>> Imported streamlit <<<")
+# … rest of your imports …
+print(">>> Finished imports, about to run UI <<<")
+
 import streamlit as st
 import pandas as pd
 import numpy as np
