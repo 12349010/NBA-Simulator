@@ -107,6 +107,14 @@ if st.button("▶️  Simulate"):
         boxes_a.append(pd.DataFrame(g["Box Scores"][cfg["away_team"]]))
         bar.progress((i+1)/sim_runs)
 
+    if "Play Log" in g:
+    with st.expander("Play‑by‑Play Log"):
+        for e in g["Play Log"]:
+            st.write(
+                f\"Q{e['quarter']} {e['time']} — {e['team']}: "
+                f\"{e['player']} {e['action']} (+{e['points']} pts)\"
+            )
+
     # optional calibration
     if 'enable_cal' in locals() and enable_cal and (act_home or act_away):
         W.save(W.DEFAULT)
