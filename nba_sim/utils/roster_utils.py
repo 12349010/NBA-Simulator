@@ -12,7 +12,7 @@ def assign_lineup(players):
     """
     by_pos = defaultdict(list)
     for p in players:
-        by_pos[p.position or ""][].append(p)
+        by_pos[p.position or ""].append(p)
 
     # helper: sort descending by height (inches)
     sort_height = lambda lst: sorted(lst, key=lambda x: x.height or 0, reverse=True)
