@@ -30,7 +30,7 @@ def ensure_db():
             raise SystemExit("nba.sqlite is required to run the simulator.")
 
 # Run on import
-ensure_db()
+# ensure_db()
 
 
 # --- your existing DB helper functions below ---
