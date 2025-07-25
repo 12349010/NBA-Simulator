@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# 1) URL of your compressed dump asset on GitHub Releases
+# Your GitHub Release asset URL (replace placeholders):
 URL="https://github.com/12349010/NBA-Simulator/releases/download/db-sql-v1/nba_dump.zip"
 
 OUT_DIR="data"
@@ -10,23 +10,13 @@ SQL_PATH="${OUT_DIR}/nba.sqlite"
 
 echo "💾 Downloading SQL dump…"
 mkdir -p "${OUT_DIR}"
-curl -L "${URL}" -o "${ZIP_PATH}"
+curl -L "$URL" -o "${ZIP_PATH}"
 
-echo "📦 Unzipping…"
-python3 - <<PYCODE
-import zipfile, os
-from pathlib import Path
+echo "📦 Unzipping with unzip…"
+unzip -o "${ZIP_PATH}" -d "${OUT_DIR}"
 
-zip_path = Path(r"${ZIP_PATH}")
-out_dir  = Path(r"${OUT_DIR}")
-out_sql  = out_dir / "dump.sql"
-
-with zipfile.ZipFile(zip_path, 'r') as z:
-    z.extractall(path=out_dir)
-
-# Rename extracted dump.sql → nba.sqlite
-os.rename(out_dir / "dump.sql", out_dir / "nba.sqlite")
-print("✅ Created", out_dir / "nba.sqlite")
-PYCODE
+# The zip contains dump.sql; rename it:
+mv "${OUT_DIR}/dump.sql" "${SQL_PATH}"
 
 echo "📂 Final check: $(ls -lh "${SQL_PATH}")"
+
