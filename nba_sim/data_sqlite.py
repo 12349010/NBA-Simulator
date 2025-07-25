@@ -1,19 +1,16 @@
 # nba_sim/data_sqlite.py
 
-import os
 import sqlite3
 import pandas as pd
 from pathlib import Path
 
-# === CONFIGURATION ===
-# You MUST set this env var to the full path of your local nba.sqlite (the 2 GB file).
-DB_PATH = Path(os.getenv("NBA_SQLITE_PATH", "")).expanduser()
+# Path to the local SQLite file; we expect it at data/nba.sqlite
+DB_PATH = Path(__file__).parent.parent / "data" / "nba.sqlite"
 
-if not DB_PATH or not DB_PATH.exists():
+if not DB_PATH.exists() or DB_PATH.stat().st_size == 0:
     raise FileNotFoundError(
         f"Cannot find nba.sqlite at {DB_PATH!r}.\n"
-        "Please set the NBA_SQLITE_PATH environment variable to the absolute path\n"
-        "of your existing nba.sqlite file (no downloading needed)."
+        "Make sure you have placed the file there (see README)."
     )
 
 
@@ -26,7 +23,7 @@ def get_team_list() -> list[str]:
 
 
 def get_player_id(display_name: str, season: int) -> int:
-    """Look up player_id by name & season."""
+    """Look up player_id by display name & season."""
     con = sqlite3.connect(DB_PATH)
     df = pd.read_sql(
         """
@@ -45,8 +42,12 @@ def get_player_id(display_name: str, season: int) -> int:
 
 
 def get_roster(team_name: str, season: int) -> dict:
-    """Fetch roster names for a team-season."""
+    """
+    Returns {'starters': [...names...], 'bench': [...]} for the given team and season.
+    We'll defer true starter/bench splits to your lineup logic.
+    """
     con = sqlite3.connect(DB_PATH)
+    # find team_id
     td = pd.read_sql(
         "SELECT id FROM team WHERE full_name = ?", con, params=(team_name,)
     )
@@ -55,7 +56,7 @@ def get_roster(team_name: str, season: int) -> dict:
         raise ValueError(f"No team record for {team_name!r}")
     team_id = int(td["id"].iloc[0])
 
-    # Primary: common_player_info window
+    # primary roster window
     df1 = pd.read_sql(
         """
         SELECT DISTINCT display_first_last AS name
@@ -67,7 +68,7 @@ def get_roster(team_name: str, season: int) -> dict:
     )
     names = df1["name"].dropna().tolist()
 
-    # Fallback: active rosterstatus
+    # fallback: active rosterstatus
     if not names:
         df2 = pd.read_sql(
             """
@@ -80,7 +81,7 @@ def get_roster(team_name: str, season: int) -> dict:
         )
         names = df2["name"].dropna().tolist()
 
-    # Final fallback: inactive_players
+    # final fallback: inactive_players
     if not names:
         df3 = pd.read_sql(
             "SELECT first_name, last_name FROM inactive_players WHERE team_id = ?",
@@ -93,7 +94,10 @@ def get_roster(team_name: str, season: int) -> dict:
 
 
 def get_team_schedule(team_name: str, season: int) -> pd.DataFrame:
-    """Fetch a DataFrame of (game_id, date) for a team-season."""
+    """
+    Returns a DataFrame of this team’s games in that season:
+    columns ['game_id', 'date'].
+    """
     con = sqlite3.connect(DB_PATH)
     td = pd.read_sql(
         "SELECT id FROM team WHERE full_name = ?", con, params=(team_name,)
@@ -119,8 +123,10 @@ def get_team_schedule(team_name: str, season: int) -> pd.DataFrame:
 
 
 def played_yesterday(team_name: str, game_date: str) -> bool:
-    """Return True if team played the day before game_date."""
-    year, month = map(int, game_date.split("-")[:2])
+    """
+    Returns True if `team_name` played on the day before `game_date`.
+    """
+    year, month = map(int, game_date.split("-", 2)[:2])
     season = year + (1 if month >= 7 else 0)
     sched = get_team_schedule(team_name, season)
     if sched.empty:
@@ -130,7 +136,7 @@ def played_yesterday(team_name: str, game_date: str) -> bool:
 
 
 def play_by_play(game_id: int) -> pd.DataFrame:
-    """Return the raw play_by_play log for a game."""
+    """Returns the raw play_by_play log for a given game_id."""
     con = sqlite3.connect(DB_PATH)
     df = pd.read_sql(
         "SELECT * FROM play_by_play WHERE game_id = ? ORDER BY eventnum",
