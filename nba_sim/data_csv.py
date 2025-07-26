@@ -104,3 +104,10 @@ def iter_play_by_play(game_id, season, chunksize=100_000):
         if not plays.empty:
             for _, row in plays.iterrows():
                 yield row.to_dict()
+
+if __name__ == "__main__":
+    # sanity check: pick a known game
+    sample_game = get_team_schedule(team_id=1610612737, season=2020).iloc[0]
+    gid, season = sample_game.game_id, sample_game.season_id
+    seq = [p["eventmsgtype"] for p in iter_play_by_play(gid, season)]
+    print(f"{len(seq)} plays loaded for game {gid} in season {season}")
