@@ -1,32 +1,21 @@
-# app.py
-
-print(">>> Starting app.py <<<")
-import streamlit as st
-print(">>> Imported streamlit <<<")
-# … rest of your imports …
-print(">>> Finished imports, about to run UI <<<")
-
 import streamlit as st
 import pandas as pd
 import numpy as np
 from datetime import date
 
-from nba_sim.data_sqlite import get_team_list
+from nba_sim.data_csv import get_team_list, get_team_schedule, iter_play_by_play
 from nba_sim.utils.injury import get_status
 from nba_sim import calibration as calib, weights as W
 from main import play_game
 
-# --------------------------------------------
 # Page config & version
-# --------------------------------------------
 st.set_page_config(page_title="NBA 48‑Min Simulator", layout="wide")
 ENGINE_VERSION = "v0.9.1"
 st.sidebar.markdown(f"**Engine v{ENGINE_VERSION}**")
 
-# --------------------------------------------
 # Sidebar controls
-# --------------------------------------------
-teams = get_team_list()
+t_teams = get_team_list()
+teams = t_teams['full_name'].tolist()
 home_team = st.sidebar.selectbox("Home Team", teams)
 away_team = st.sidebar.selectbox("Away Team", [t for t in teams if t != home_team])
 
@@ -48,7 +37,7 @@ fatigue_on = st.sidebar.checkbox(
 )
 
 # Optional: show current injury status
-if st.sidebar.checkbox("Show injuried players"):
+if st.sidebar.checkbox("Show injured players"):
     st.sidebar.write(f"**{home_team} Injuries:**", get_status(home_team))
     st.sidebar.write(f"**{away_team} Injuries:**", get_status(away_team))
 
@@ -71,9 +60,7 @@ if calibrate:
         except Exception as e:
             st.sidebar.error(f"Calibration error: {e}")
 
-# --------------------------------------------
 # Main simulation trigger
-# --------------------------------------------
 if st.sidebar.button("Run Simulations"):
     cfg = {
         "home_team": home_team,
@@ -82,11 +69,9 @@ if st.sidebar.button("Run Simulations"):
         "fatigue_on": fatigue_on
     }
 
-    res_h, res_a = [], []
-    boxes_h, boxes_a = [], []
+    res_h, res_a, boxes_h, boxes_a = [], [], [], []
     bar = st.progress(0.0)
 
-    # Monte‑Carlo runs
     for i in range(sim_runs):
         g = play_game(cfg, seed=i)
         res_h.append(g["Final Score"][home_team])
@@ -95,10 +80,7 @@ if st.sidebar.button("Run Simulations"):
         boxes_a.append(pd.DataFrame(g["Box Scores"][away_team]))
         bar.progress((i + 1) / sim_runs)
 
-    # --------------------------------------------
-    # Summary stats
-    # --------------------------------------------
-    home_avg = np.mean(res_h)
+    # Summary\ n    home_avg = np.mean(res_h)
     away_avg = np.mean(res_a)
     home_wins = sum(1 for h, a in zip(res_h, res_a) if h > a)
     win_pct = 100 * home_wins / sim_runs
@@ -110,13 +92,9 @@ if st.sidebar.button("Run Simulations"):
         f"{home_team} win %": f"{win_pct:.1f}%"
     })
 
-    # Score distribution chart
     df_scores = pd.DataFrame({home_team: res_h, away_team: res_a})
     st.bar_chart(df_scores)
 
-    # --------------------------------------------
-    # Sample Box Scores
-    # --------------------------------------------
     st.subheader("Sample Box Scores (Last Simulation)")
     col1, col2 = st.columns(2)
     with col1:
@@ -126,9 +104,6 @@ if st.sidebar.button("Run Simulations"):
         st.write(f"**{away_team} Box**")
         st.dataframe(boxes_a[-1], use_container_width=True)
 
-    # --------------------------------------------
-    # Play‑by‑Play Log
-    # --------------------------------------------
     if "Play Log" in g:
         with st.expander("Play‑by‑Play Log", expanded=False):
             for e in g["Play Log"]:
