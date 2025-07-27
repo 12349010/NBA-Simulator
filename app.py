@@ -47,9 +47,19 @@ season = st.sidebar.selectbox("Season", home_seasons, key='season')
 away_team = st.sidebar.selectbox("Away Team", [t for t in team_names if t != home_team], key='away_team')
 
 # Roster selection for home and away
-st.sidebar.header("Customize Rosters")
-# Fetch rosters
-home_roster_df = get_roster(home_team, season)
+st.sidebar.header("Injury Status")
+# Show injured players from home roster
+for player in home_players:
+    status = get_status(player)
+    if status.lower() not in ['healthy', 'active']:
+        st.sidebar.write(f"**Home**: {player} - {status}")
+# Show injured players from away roster
+for player in away_players:
+    status = get_status(player)
+    if status.lower() not in ['healthy', 'active']:
+        st.sidebar.write(f"**Away**: {player} - {status}")
+
+home_roster_df = get_roster(home_team, season)(home_team, season)
 home_players = home_roster_df['player_name'].tolist()
 away_roster_df = get_roster(away_team, season)
 away_players = away_roster_df['player_name'].tolist()
