@@ -61,15 +61,17 @@ def get_team_schedule(team_id, season=None):
     return df.sort_values('game_date')
 
 def get_roster(team_id, season):
-    # season is the full ID (e.g. 12008), so we match on 'season_id'
+    """
+    Returns {'players': [...]}. Filters on 'season' (not 'season_id') in the player info CSVs.
+    """
     df = _common_player_info_df[
-        (_common_player_info_df['team_id']   == team_id) &
-        (_common_player_info_df['season_id'] == int(season))
+        (_common_player_info_df['team_id'] == team_id) &
+        (_common_player_info_df['season']  == int(season))
     ]
     if df.empty:
         df = _inactive_players_df[
-            (_inactive_players_df['team_id']   == team_id) &
-            (_inactive_players_df['season_id'] == int(season))
+            (_inactive_players_df['team_id'] == team_id) &
+            (_inactive_players_df['season']  == int(season))
         ]
     return {'players': df['player_id'].tolist()}
 
