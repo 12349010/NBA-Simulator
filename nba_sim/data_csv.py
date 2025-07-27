@@ -79,6 +79,14 @@ def get_roster(team_id, season):
             (_inactive_players_df['season_id'] == season)
         ]
     return {'players': roster['player_id'].tolist()}
+    _common_player_info_df = pd.read_csv(os.path.join(DATA_DIR, 'common_player_info.csv'))
+# If the CSV uses "season" instead of "season_id", rename it:
+if 'season' in _common_player_info_df.columns and 'season_id' not in _common_player_info_df.columns:
+    _common_player_info_df.rename(columns={'season': 'season_id'}, inplace=True)
+
+_inactive_players_df = pd.read_csv(os.path.join(DATA_DIR, 'inactive_players.csv'))
+if 'season' in _inactive_players_df.columns and 'season_id' not in _inactive_players_df.columns:
+    _inactive_players_df.rename(columns={'season': 'season_id'}, inplace=True)
 
 
 def iter_play_by_play(game_id, season, chunksize=100_000):
