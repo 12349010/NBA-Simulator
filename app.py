@@ -22,8 +22,15 @@ home_team = st.sidebar.selectbox("Home Team", teams)
 away_team = st.sidebar.selectbox("Away Team", [t for t in teams if t != home_team])
 
 # Season selection
-all_seasons = sorted(_game_df['season_id'].astype(int).unique())
-season = st.sidebar.selectbox("Season", all_seasons)
+# Pull all raw season IDs
+season_ids = sorted(_game_df['season_id'].astype(int).unique())
+
+# Build human‐friendly labels
+season_labels = [str(sid % 10000) for sid in season_ids]  # 12008 → “2008”, 22021 → “2021”
+
+# Let user pick by label, then map back to the real ID
+chosen_label = st.sidebar.selectbox("Season", season_labels)
+season = season_ids[season_labels.index(chosen_label)]
 
 # Game date selection
 game_date = st.sidebar.date_input(
