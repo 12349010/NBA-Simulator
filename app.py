@@ -3,10 +3,11 @@ import pandas as pd
 import numpy as np
 from datetime import date
 
-from nba_sim.data_csv import get_team_list, get_team_schedule, iter_play_by_play
+from nba_sim.data_csv import get_team_list, get_team_schedule, iter_play_by_play, _game_df
 from nba_sim.utils.injury import get_status
 from nba_sim import calibration as calib, weights as W
-from main import play_game
+from nba_sim.possession_engine import simulate_game
+from nba_sim.team_model import Team
 
 # Page config & version
 st.set_page_config(page_title="NBA 48‑Min Simulator", layout="wide")
@@ -14,16 +15,23 @@ ENGINE_VERSION = "v0.9.1"
 st.sidebar.markdown(f"**Engine v{ENGINE_VERSION}**")
 
 # Sidebar controls
+# Team selection
 t_teams = get_team_list()
 teams = t_teams['full_name'].tolist()
 home_team = st.sidebar.selectbox("Home Team", teams)
 away_team = st.sidebar.selectbox("Away Team", [t for t in teams if t != home_team])
 
+# Season selection
+all_seasons = sorted(_game_df['season_id'].astype(int).unique())
+season = st.sidebar.selectbox("Season", all_seasons)
+
+# Game date selection
 game_date = st.sidebar.date_input(
     "Game Date",
     value=date.today()
 ).strftime("%Y-%m-%d")
 
+# Number of simulations
 sim_runs = st.sidebar.number_input(
     "Number of simulations",
     min_value=1,
@@ -31,12 +39,13 @@ sim_runs = st.sidebar.number_input(
     step=1
 )
 
+# Fatigue toggle
 fatigue_on = st.sidebar.checkbox(
     "Apply fatigue (back‑to‑back)",
     value=True
 )
 
-# Optional: show current injury status
+# Optional: injured players
 if st.sidebar.checkbox("Show injured players"):
     st.sidebar.write(f"**{home_team} Injuries:**", get_status(home_team))
     st.sidebar.write(f"**{away_team} Injuries:**", get_status(away_team))
@@ -53,7 +62,8 @@ if calibrate:
                     "home_team": home_team,
                     "away_team": away_team,
                     "game_date": game_date,
-                    "fatigue_on": fatigue_on
+                    "fatigue_on": fatigue_on,
+                    "season": season
                 }
             )
             st.sidebar.write("**Calibration Results**", cal_results)
@@ -62,27 +72,31 @@ if calibrate:
 
 # Main simulation trigger
 if st.sidebar.button("Run Simulations"):
-    cfg = {
-        "home_team": home_team,
-        "away_team": away_team,
-        "game_date": game_date,
-        "fatigue_on": fatigue_on
-    }
+    # Initialize Team objects
+    home = Team(home_team, season, is_home=True)
+    away = Team(away_team, season, is_home=False)
 
-    res_h, res_a, boxes_h, boxes_a = [], [], [], []
+    results_home = []
+    results_away = []
+    boxes_home = []
+    boxes_away = []
     bar = st.progress(0.0)
 
-    for i in range(sim_runs):
-        g = play_game(cfg, seed=i)
-        res_h.append(g["Final Score"][home_team])
-        res_a.append(g["Final Score"][away_team])
-        boxes_h.append(pd.DataFrame(g["Box Scores"][home_team]))
-        boxes_a.append(pd.DataFrame(g["Box Scores"][away_team]))
+    for i in range(int(sim_runs)):
+        sim_cfg = {"seed": i, "fatigue_on": fatigue_on}
+        g = simulate_game(home, away, game_date, sim_cfg)
+
+        results_home.append(g["Final Score"][home_team])
+        results_away.append(g["Final Score"][away_team])
+        boxes_home.append(pd.DataFrame(g["Box Scores"][home_team]))
+        boxes_away.append(pd.DataFrame(g["Box Scores"][away_team]))
+
         bar.progress((i + 1) / sim_runs)
 
-    # Summary\ n    home_avg = np.mean(res_h)
-    away_avg = np.mean(res_a)
-    home_wins = sum(1 for h, a in zip(res_h, res_a) if h > a)
+    # Summary stats
+    home_avg = np.mean(results_home)
+    away_avg = np.mean(results_away)
+    home_wins = sum(1 for h, a in zip(results_home, results_away) if h > a)
     win_pct = 100 * home_wins / sim_runs
 
     st.subheader("Simulation Summary")
@@ -92,18 +106,20 @@ if st.sidebar.button("Run Simulations"):
         f"{home_team} win %": f"{win_pct:.1f}%"
     })
 
-    df_scores = pd.DataFrame({home_team: res_h, away_team: res_a})
+    df_scores = pd.DataFrame({home_team: results_home, away_team: results_away})
     st.bar_chart(df_scores)
 
+    # Show sample box scores
     st.subheader("Sample Box Scores (Last Simulation)")
     col1, col2 = st.columns(2)
     with col1:
         st.write(f"**{home_team} Box**")
-        st.dataframe(boxes_h[-1], use_container_width=True)
+        st.dataframe(boxes_home[-1], use_container_width=True)
     with col2:
         st.write(f"**{away_team} Box**")
-        st.dataframe(boxes_a[-1], use_container_width=True)
+        st.dataframe(boxes_away[-1], use_container_width=True)
 
+    # Play-by-play log
     if "Play Log" in g:
         with st.expander("Play‑by‑Play Log", expanded=False):
             for e in g["Play Log"]:
