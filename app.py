@@ -21,14 +21,9 @@ teams = t_teams['full_name'].tolist()
 home_team = st.sidebar.selectbox("Home Team", teams)
 away_team = st.sidebar.selectbox("Away Team", [t for t in teams if t != home_team])
 
-# Season selection
-# Pull all raw season IDs
+# Season selection: display last 4 digits but keep full ID under the hood
 season_ids = sorted(_game_df['season_id'].astype(int).unique())
-
-# Build human‐friendly labels
-season_labels = [str(sid % 10000) for sid in season_ids]  # 12008 → “2008”, 22021 → “2021”
-
-# Let user pick by label, then map back to the real ID
+season_labels = [str(sid % 10000) for sid in season_ids]
 chosen_label = st.sidebar.selectbox("Season", season_labels)
 season = season_ids[season_labels.index(chosen_label)]
 
@@ -79,14 +74,12 @@ if calibrate:
 
 # Main simulation trigger
 if st.sidebar.button("Run Simulations"):
-    # Initialize Team objects
+    # Initialize teams
     home = Team(home_team, season, is_home=True)
     away = Team(away_team, season, is_home=False)
 
-    results_home = []
-    results_away = []
-    boxes_home = []
-    boxes_away = []
+    # Run simulations
+    results_home, results_away, boxes_home, boxes_away = [], [], [], []
     bar = st.progress(0.0)
 
     for i in range(int(sim_runs)):
@@ -116,7 +109,7 @@ if st.sidebar.button("Run Simulations"):
     df_scores = pd.DataFrame({home_team: results_home, away_team: results_away})
     st.bar_chart(df_scores)
 
-    # Show sample box scores
+    # Sample box scores
     st.subheader("Sample Box Scores (Last Simulation)")
     col1, col2 = st.columns(2)
     with col1:
