@@ -2,58 +2,37 @@ from dataclasses import dataclass, field
 from typing import Optional, Dict
 
 from nba_sim.utils.stats_utils import stats_provider
-from nba_sim.data_csv     import get_player_id
+from nba_sim.data_csv import get_player_id
 
 @dataclass
 class Player:
     """
-    Represents an NBA player in the simulation, enriched with historical 
-    performance probabilities (FG%, 3P%, rebounding rate) loaded at init.
-    Tracks cumulative game stats in `g` and time on court in `minutes_so_far`.
+    Represents an NBA player in a given season, holding stats and tracking minutes.
     """
     name: str
     season: int
-    position: Optional[str] = None
-    height: Optional[float] = None
-    weight: Optional[float] = None
-
     id: int = field(init=False)
-    fg_pct: float = field(init=False)
-    three_pct: float = field(init=False)
-    three_prop: float = field(init=False)
-    reb_rate: float = field(init=False)
-
-    g: Dict[str, float] = field(default_factory=lambda: {
-        'minutes': 0.0,
-        'points': 0.0,
-        'rebounds': 0.0,
-        'assists': 0.0,
-        'field_goals': 0.0,
-        'three_points': 0.0,
-        'two_points': 0.0
-    })
-    minutes_so_far: float = 0.0
+    stats: Dict = field(default_factory=dict)
+    minutes_so_far: int = 0
+    cap: Optional[int] = None  # minutes cap based on injury status or other rules
 
     def __post_init__(self):
+        # Determine the player's unique ID based on name and season
         self.id = get_player_id(self.name, self.season)
+        # Load base stats for this player-season
+        self.stats = stats_provider(self.id, self.season)
+        # Initialize minutes cap if not set elsewhere (team logic can override)
+        # self.cap should be set by team_model during roster build
+        return
 
-        shoot = stats_provider.get_player_shooting(self.id, self.season)
-        self.fg_pct = shoot['fg_pct']
-        self.three_pct = shoot['three_pct']
-        self.three_prop = shoot['three_prop']
+    def record_minutes(self, mins: int):
+        """
+        Increment minutes played, useful for rotation logic.
+        """
+        self.minutes_so_far += mins
 
-        reb = stats_provider.get_player_rebounding(self.id, self.season)
-        self.reb_rate = reb['reb_rate']
-
-    def shot(self, made: bool, is3: bool):
-        self.g['field_goals'] += 1
-        if made:
-            pts = 3 if is3 else 2
-            self.g['points'] += pts
-            if is3:
-                self.g['three_points'] += 1
-            else:
-                self.g['two_points'] += 1
-
-    def misc(self):
-        pass
+    def reset_minutes(self):
+        """
+        Reset minutes played to zero.
+        """
+        self.minutes_so_far = 0
