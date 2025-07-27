@@ -71,8 +71,8 @@ speed = st.sidebar.slider("Simulation Speed (seconds per play)", min_value=0.1, 
 # Run to end toggle
 run_to_end = st.sidebar.checkbox("Run to End", value=False)
 
-if st.sidebar.button("Simulate Game"):("Simulate Game"):
-    # Prepare configuration
+if st.sidebar.button("Simulate Game"):
+    # Prepare config and run simulation
     config = {
         'home_team': home_team,
         'away_team': away_team,
@@ -80,25 +80,51 @@ if st.sidebar.button("Simulate Game"):("Simulate Game"):
         'home_roster': home_starters + home_bench,
         'away_roster': away_starters + away_bench
     }
-    # Run simulation
     results = play_game(config)
-    box = results['box_score']
-    pbp = results['pbp']
+    # Extract results
+    box_df = results['box_score'].copy()
+    pbp_df = results['pbp']
 
-    # Layout - Two Columns: Scoreboard and Play-by-Play
-    col1, col2 = st.columns(2)
+    # Placeholders for live update
+    score_placeholder = st.empty()
+    box_placeholder = st.empty()
+    pbp_placeholder = st.empty()
 
-    # Scoreboard & Box Score
-    with col1:
-        st.subheader("Box Score")
-        st.dataframe(box)
+    # Track play-by-play text
+    play_texts = []
 
-    # Play-by-Play Log
-    with col2:
-        st.subheader("Play-by-Play")
-        st.dataframe(pbp)
+    # Simulate playback
+    for _, ev in pbp_df.iterrows():
+        # Build description
+        desc = ev.get('description') or str(ev.to_dict())
+        play_texts.append(desc)
 
-    # Optionally show raw data
-    st.write("---")
-    st.write("Detailed Results:")
-    st.write(results)
+        # Update box score if points present
+        pts = ev.get('points', 0)
+        pid = ev.get('player1_id')
+        team_label = 'home' if ev.get('team_id') == teams_df.loc[teams_df['team_name'] == home_team, 'team_id'].iloc[0] else 'away'
+        if pts and pid is not None:
+            mask = (box_df['team'] == team_label) & (box_df['player_id'] == pid)
+            box_df.loc[mask, 'points'] += pts
+
+        # Calculate current score
+        home_score = box_df[box_df['team']=='home']['points'].sum()
+        away_score = box_df[box_df['team']=='away']['points'].sum()
+
+        # Render updates
+        score_placeholder.markdown(f"**Score: Home {home_score} - {away_score} Away**")
+        box_placeholder.dataframe(box_df)
+        # Show last few plays
+        pbp_placeholder.write("
+".join(play_texts[-10:]))
+
+        # Control playback speed
+        if not run_to_end:
+            st.sleep(speed)
+
+    # Final results
+    st.markdown("---")
+    st.subheader("Final Box Score")
+    st.dataframe(box_df)
+    st.subheader("Full Play-by-Play Log")
+    st.dataframe(pbp_df)
