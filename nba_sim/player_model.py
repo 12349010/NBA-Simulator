@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from typing import Optional, Dict
 
 from nba_sim.utils.stats_utils import stats_provider
-from nba_sim.data_sqlite import get_player_id
+from nba_sim.data_csv     import get_player_id
 
 @dataclass
 class Player:
