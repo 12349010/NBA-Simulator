@@ -36,6 +36,16 @@ _draft_history_df = pd.read_csv(os.path.join(DATA_DIR, 'draft_history.csv'))
 _game_info_df = pd.read_csv(os.path.join(DATA_DIR, 'game_info.csv'))
 _game_summary_df = pd.read_csv(os.path.join(DATA_DIR, 'game_summary.csv'))
 
+def get_player_id(full_name: str, season: int) -> int:
+    """
+    Lookup a player’s ID by their full name from player.csv.
+    """
+    # Assume player.csv has columns ['player_id','full_name', …]
+    matches = _player_df[_player_df['full_name'] == full_name]
+    if not matches.empty:
+        return int(matches['player_id'].iloc[0])
+    raise KeyError(f"No player_id found for {full_name}")
+    
 def get_team_list():
     """Returns DataFrame with columns id, full_name, abbreviation."""
     return _team_df[['id', 'full_name', 'abbreviation']].copy()
