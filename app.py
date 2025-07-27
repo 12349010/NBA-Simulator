@@ -1,131 +1,83 @@
+# app.py
 import streamlit as st
 import pandas as pd
-import numpy as np
-from datetime import date
+from nba_sim.calibration import play_game  # Adjust import if play_game moved
+from nba_sim.data_csv import get_team_list, get_team_schedule, get_roster
 
-from nba_sim.data_csv import get_team_list, get_team_schedule, iter_play_by_play, _game_df
-from nba_sim.utils.injury import get_status
-from nba_sim import calibration as calib, weights as W
-from nba_sim.possession_engine import simulate_game
-from nba_sim.team_model import Team
+# Page configuration
+st.set_page_config(page_title="NBA Simulator", layout="wide")
 
-# Page config & version
-st.set_page_config(page_title="NBA 48‑Min Simulator", layout="wide")
-ENGINE_VERSION = "v0.9.1"
-st.sidebar.markdown(f"**Engine v{ENGINE_VERSION}**")
+# Title
+st.title("NBA Game Simulator")
 
-# Sidebar controls
-# Team selection
-t_teams = get_team_list()
-teams = t_teams['full_name'].tolist()
-home_team = st.sidebar.selectbox("Home Team", teams)
-away_team = st.sidebar.selectbox("Away Team", [t for t in teams if t != home_team])
+# Sidebar - Team and Season Selection
+st.sidebar.header("Select Teams & Season")
 
-# Season selection: display last 4 digits but keep full ID under the hood
-season_ids = sorted(_game_df['season_id'].astype(int).unique())
-season_labels = [str(sid % 10000) for sid in season_ids]
-chosen_label = st.sidebar.selectbox("Season", season_labels)
-season = season_ids[season_labels.index(chosen_label)]
+# Get list of teams
+teams_df = get_team_list()
+team_names = teams_df['team_name'].tolist()
 
-# Game date selection
-game_date = st.sidebar.date_input(
-    "Game Date",
-    value=date.today()
-).strftime("%Y-%m-%d")
+# Home team selection
+home_team = st.sidebar.selectbox("Home Team", team_names, key='home_team')
+# Seasons available for home
+home_id = teams_df[teams_df['team_name'] == home_team]['team_id'].iloc[0]
+home_schedule = get_team_schedule(home_team, None) if False else get_team_schedule(home_team, 0)
+# Actually fetch unique seasons from full schedule
+home_schedule_all = get_team_schedule(home_team, season=None)
+home_seasons = sorted(home_schedule_all['season'].unique().tolist()) if 'season' in home_schedule_all.columns else []
+season = st.sidebar.selectbox("Season", home_seasons, key='season')
 
-# Number of simulations
-sim_runs = st.sidebar.number_input(
-    "Number of simulations",
-    min_value=1,
-    value=100,
-    step=1
-)
+# Away team selection
+away_team = st.sidebar.selectbox("Away Team", [t for t in team_names if t != home_team], key='away_team')
 
-# Fatigue toggle
-fatigue_on = st.sidebar.checkbox(
-    "Apply fatigue (back‑to‑back)",
-    value=True
-)
+# Roster selection for home and away
+st.sidebar.header("Customize Rosters")
+# Fetch rosters
+home_roster_df = get_roster(home_team, season)
+home_players = home_roster_df['player_name'].tolist()
+away_roster_df = get_roster(away_team, season)
+away_players = away_roster_df['player_name'].tolist()
 
-# Optional: injured players
-if st.sidebar.checkbox("Show injured players"):
-    st.sidebar.write(f"**{home_team} Injuries:**", get_status(home_team))
-    st.sidebar.write(f"**{away_team} Injuries:**", get_status(away_team))
+# Default starters and bench
+default_home_starters = home_players[:5]
+default_home_bench = home_players[5:]
+default_away_starters = away_players[:5]
+default_away_bench = away_players[5:]
 
-# Calibration controls
-calibrate = st.sidebar.checkbox("Calibrate to actual", value=False)
-if calibrate:
-    game_id_input = st.sidebar.text_input("Game ID for calibration", "")
-    if st.sidebar.button("Run Calibration"):
-        try:
-            cal_results = calib.calibrate(
-                int(game_id_input),
-                {
-                    "home_team": home_team,
-                    "away_team": away_team,
-                    "game_date": game_date,
-                    "fatigue_on": fatigue_on,
-                    "season": season
-                }
-            )
-            st.sidebar.write("**Calibration Results**", cal_results)
-        except Exception as e:
-            st.sidebar.error(f"Calibration error: {e}")
+home_starters = st.sidebar.multiselect("Home Starters", home_players, default=default_home_starters)
+home_bench = st.sidebar.multiselect("Home Bench", [p for p in home_players if p not in home_starters], default=default_home_bench)
+away_starters = st.sidebar.multiselect("Away Starters", away_players, default=default_away_starters)
+away_bench = st.sidebar.multiselect("Away Bench", [p for p in away_players if p not in away_starters], default=default_away_bench)
 
-# Main simulation trigger
-if st.sidebar.button("Run Simulations"):
-    # Initialize teams
-    home = Team(home_team, season, is_home=True)
-    away = Team(away_team, season, is_home=False)
+# Simulation control
+if st.sidebar.button("Simulate Game"):
+    # Prepare configuration
+    config = {
+        'home_team': home_team,
+        'away_team': away_team,
+        'season': season,
+        'home_roster': home_starters + home_bench,
+        'away_roster': away_starters + away_bench
+    }
+    # Run simulation
+    results = play_game(config)
+    box = results['box_score']
+    pbp = results['pbp']
 
-    # Run simulations
-    results_home, results_away, boxes_home, boxes_away = [], [], [], []
-    bar = st.progress(0.0)
-
-    for i in range(int(sim_runs)):
-        sim_cfg = {"seed": i, "fatigue_on": fatigue_on}
-        g = simulate_game(home, away, game_date, sim_cfg)
-
-        results_home.append(g["Final Score"][home_team])
-        results_away.append(g["Final Score"][away_team])
-        boxes_home.append(pd.DataFrame(g["Box Scores"][home_team]))
-        boxes_away.append(pd.DataFrame(g["Box Scores"][away_team]))
-
-        bar.progress((i + 1) / sim_runs)
-
-    # Summary stats
-    home_avg = np.mean(results_home)
-    away_avg = np.mean(results_away)
-    home_wins = sum(1 for h, a in zip(results_home, results_away) if h > a)
-    win_pct = 100 * home_wins / sim_runs
-
-    st.subheader("Simulation Summary")
-    st.write({
-        f"{home_team} avg": round(home_avg, 1),
-        f"{away_team} avg": round(away_avg, 1),
-        f"{home_team} win %": f"{win_pct:.1f}%"
-    })
-
-    df_scores = pd.DataFrame({home_team: results_home, away_team: results_away})
-    st.bar_chart(df_scores)
-
-    # Sample box scores
-    st.subheader("Sample Box Scores (Last Simulation)")
+    # Layout - Two Columns: Scoreboard and Play-by-Play
     col1, col2 = st.columns(2)
-    with col1:
-        st.write(f"**{home_team} Box**")
-        st.dataframe(boxes_home[-1], use_container_width=True)
-    with col2:
-        st.write(f"**{away_team} Box**")
-        st.dataframe(boxes_away[-1], use_container_width=True)
 
-    # Play-by-play log
-    if "Play Log" in g:
-        with st.expander("Play‑by‑Play Log", expanded=False):
-            for e in g["Play Log"]:
-                assist_part = f", AST by {e.get('assist')}" if e.get('assist') else ""
-                st.write(
-                    f"Q{e['quarter']} {e['time']} — {e['team']}: "
-                    f"{e['player']} {e['action']} (+{e['points']} pts), "
-                    f"REB {e['rebound']}{assist_part}"
-                )
+    # Scoreboard & Box Score
+    with col1:
+        st.subheader("Box Score")
+        st.dataframe(box)
+
+    # Play-by-Play Log
+    with col2:
+        st.subheader("Play-by-Play")
+        st.dataframe(pbp)
+
+    # Optionally show raw data
+    st.write("---")
+    st.write("Detailed Results:")
+    st.write(results)
