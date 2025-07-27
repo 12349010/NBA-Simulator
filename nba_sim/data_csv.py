@@ -62,18 +62,24 @@ def get_team_schedule(team_id, season=None):
 
 def get_roster(team_id, season):
     """
-    Returns {'players': [...]}. Filters on 'season' (not 'season_id') in the player info CSVs.
+    Returns {'players': […]}. Filters on 'team_id' and 'season_id'.
     """
-    df = _common_player_info_df[
-        (_common_player_info_df['team_id'] == team_id) &
-        (_common_player_info_df['season']  == int(season))
+    # Make sure season is an int
+    season = int(season)
+
+    # Try the common roster first
+    roster = _common_player_info_df[
+        (_common_player_info_df['team_id']   == team_id) &
+        (_common_player_info_df['season_id'] == season)
     ]
-    if df.empty:
-        df = _inactive_players_df[
-            (_inactive_players_df['team_id'] == team_id) &
-            (_inactive_players_df['season']  == int(season))
+    if roster.empty:
+        # Fallback to inactive roster
+        roster = _inactive_players_df[
+            (_inactive_players_df['team_id']   == team_id) &
+            (_inactive_players_df['season_id'] == season)
         ]
-    return {'players': df['player_id'].tolist()}
+    return {'players': roster['player_id'].tolist()}
+
 
 def iter_play_by_play(game_id, season, chunksize=100_000):
     """
