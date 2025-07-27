@@ -1,13 +1,17 @@
 import numpy as np
 import pandas as pd
 
-from nba_sim.data_csv import get_roster, get_team_schedule, iter_play_by_play
-from nba_sim.data_sqlite import played_yesterday  # if still needed for fatigue logic
+from nba_sim.data_csv import get_roster, get_team_schedule, iter_play_by_play, _line_score_df
 from nba_sim.player_model import Player
 from nba_sim.utils.roster_utils import assign_lineup
 
-# Load full line_score table once
-from nba_sim.data_csv import _line_score_df  # private import of module‑level DataFrame
+# Stub fatigue function (replace with real logic if desired)
+def played_yesterday(team_name: str, game_date: str) -> bool:
+    """
+    Placeholder for fatigue/back-to-back detection.
+    Always returns False. Implement with CSV lookup if needed.
+    """
+    return False
 
 
 def _get_line_score(game_id: int) -> dict[str, list[int]]:
@@ -28,15 +32,16 @@ def simulate_game(home, away, game_date: str, config: dict) -> dict:
     Simulates a 48-minute NBA game between home and away on game_date.
     Returns final results and play log.
     """
-    rng = np.random.default_rng(config.get("seed"))
+    seed = config.get("seed")
+    rng = np.random.default_rng(seed) if seed is not None else np.random.default_rng()
 
     # Determine season from date
     year, month = map(int, game_date.split("-")[:2])
     season = year + (1 if month >= 7 else 0)
 
     # Fatigue/back-to-back flags
-    fat_h = played_yesterday(home.name, game_date)
-    fat_a = played_yesterday(away.name, game_date)
+    fat_h = played_yesterday(home.name, game_date) if config.get("fatigue_on") else False
+    fat_a = played_yesterday(away.name, game_date) if config.get("fatigue_on") else False
 
     # Load rosters via CSV
     raw_h = get_roster(home.name, season)
@@ -79,10 +84,7 @@ def simulate_game(home, away, game_date: str, config: dict) -> dict:
         if made:
             rebounder = choose_rebounder(def_lineup)
         else:
-            if rng.random() < 0.3:
-                rebounder = choose_rebounder(off_lineup)
-            else:
-                rebounder = choose_rebounder(def_lineup)
+            rebounder = choose_rebounder(off_lineup) if rng.random() < 0.3 else choose_rebounder(def_lineup)
         rebounder.g["rebounds"] += 1
 
         rem = max(0, 48 * 60 - clock)
@@ -106,6 +108,7 @@ def simulate_game(home, away, game_date: str, config: dict) -> dict:
         for p in off_lineup:
             p.minutes_so_far += poss_time / 60
 
+        # Simple rotation at 6-minute mark
         if clock // 60 >= (quarter + 1) * 6:
             if off is home and home.bench:
                 i = rng.integers(len(lineup_home))
@@ -114,17 +117,14 @@ def simulate_game(home, away, game_date: str, config: dict) -> dict:
                 i = rng.integers(len(lineup_away))
                 lineup_away[i], away.bench[0] = away.bench[0], lineup_away[i]
 
+        # Advance quarter at 12-minute intervals
         if clock // 60 >= (quarter + 1) * 12:
             quarter += 1
 
     # Actual quarter splits via CSV
     sched = get_team_schedule(home.name, season)
     row = sched[sched['game_date'] == pd.to_datetime(game_date)]
-    if not row.empty:
-        gid = int(row['game_id'].iloc[0])
-        actual = _get_line_score(gid)
-    else:
-        actual = {"home": [], "away": []}
+    actual = _get_line_score(int(row['game_id'].iloc[0])) if not row.empty else {"home": [], "away": []}
 
     # Box scores
     box_scores = {
