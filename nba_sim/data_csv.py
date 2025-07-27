@@ -20,6 +20,11 @@ def _load_csv(name: str) -> pd.DataFrame:
 # Load core tables
 _team_df = _load_csv('team')
 _game_df = _load_csv('game')
+_line_score_df = _load_csv('line_score')
+_common_player_info_df = _load_csv('common_player_info')
+_inactive_players_df = _load_csv('inactive_players')
+_team_df = _load_csv('team')
+_game_df = _load_csv('game')
 _common_player_info_df = _load_csv('common_player_info')
 _inactive_players_df = _load_csv('inactive_players')
 
