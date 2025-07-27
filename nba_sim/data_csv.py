@@ -61,17 +61,17 @@ def get_team_schedule(team_id, season=None):
     return df.sort_values('game_date')
 
 def get_roster(team_id, season):
-    """Returns dict {'players': [player_id,...]} for common or inactive players."""
-    roster = _common_player_info_df[
-        ( _common_player_info_df['team_id'] == team_id ) &
-        ( _common_player_info_df['season'] == int(season) )
+    # season is the full ID (e.g. 12008), so we match on 'season_id'
+    df = _common_player_info_df[
+        (_common_player_info_df['team_id']   == team_id) &
+        (_common_player_info_df['season_id'] == int(season))
     ]
-    if roster.empty:
-        roster = _inactive_players_df[
-            ( _inactive_players_df['team_id'] == team_id ) &
-            ( _inactive_players_df['season'] == int(season) )
+    if df.empty:
+        df = _inactive_players_df[
+            (_inactive_players_df['team_id']   == team_id) &
+            (_inactive_players_df['season_id'] == int(season))
         ]
-    return {'players': roster['player_id'].tolist()}
+    return {'players': df['player_id'].tolist()}
 
 def iter_play_by_play(game_id, season, chunksize=100_000):
     """
