@@ -1,35 +1,57 @@
-from nba_sim.team_model import Team
+# nba_sim/main.py
+"""
+Entrypoint for NBA Simulator: game orchestration and calibration.
+"""
+import json
+
 from nba_sim.possession_engine import simulate_game
+from nba_sim.team_model import Team
 
-def _build(name, starters, bench, season, home):
-    return Team(name, starters + bench, season, is_home=home)
 
-def play_game(cfg: dict, seed: int | None = None):
-    # Determine NBA season based on game_date
-    year, month = map(int, cfg["game_date"].split("-")[:2])
-    season = year + (1 if month >= 7 else 0)
+def play_game(config: dict) -> dict:
+    """
+    Run a single play-by-play simulation for two teams based on the config.
 
-    # Build Team objects for home and away
-    home = _build(
-        cfg["home_team"],
-        cfg.get("home_starters", []),
-        cfg.get("home_backups", []),
-        season,
-        True,
-    )
-    away = _build(
-        cfg["away_team"],
-        cfg.get("away_starters", []),
-        cfg.get("away_backups", []),
-        season,
-        False,
-    )
+    Args:
+        config: {
+            'home_team': team name or ID,
+            'away_team': team name or ID,
+            'season': season end year (e.g., 1996),
+            'home_roster': Optional[List[str]] of player names,
+            'away_roster': Optional[List[str]] of player names
+        }
+    Returns:
+        Dict containing 'box_score' DataFrame and 'pbp' DataFrame of events.
+    """
+    # Extract config values
+    home_key = config.get('home_team')
+    away_key = config.get('away_team')
+    season = config.get('season')
+    home_override = config.get('home_roster')
+    away_override = config.get('away_roster')
 
-    # Consolidate simulation config
-    config = {
-        "fatigue_on": cfg.get("fatigue_on", True),
-        "seed": seed,
+    # Initialize Team objects
+    home_team = Team(name=home_key, season=season, is_home=True, roster_override=home_override)
+    away_team = Team(name=away_key, season=season, is_home=False, roster_override=away_override)
+
+    # Run simulation engine
+    box_score, pbp_df = simulate_game(home_team.name, away_team.name, season)
+
+    # Package results
+    return {
+        'home_team': home_team.name,
+        'away_team': away_team.name,
+        'season': season,
+        'box_score': box_score,
+        'pbp': pbp_df
     }
 
-    # Run simulation and return results
-    return simulate_game(home, away, cfg["game_date"], config)
+
+def save_simulation_results(path: str, results: dict):
+    """
+    Save simulation results (box score and play-by-play) to JSON/CSV files.
+    """
+    # Save box score as CSV
+    results['box_score'].to_csv(f"{path}_box.csv", index=False)
+    # Save play-by-play as CSV
+    results['pbp'].to_csv(f"{path}_pbp.csv", index=False)
