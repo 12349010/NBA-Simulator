@@ -1,29 +1,32 @@
-"""
-Centralised weight dictionary so calibration can update it then persist.
-"""
-import json, os
+# nba_sim/weights.py
+import json
 from pathlib import Path
 
-WEIGHTS_FILE = Path(__file__).resolve().parent / "weights.json"
+# Path to the weights file
+BASE_DIR = Path(__file__).parent.parent
+WEIGHTS_FILE = BASE_DIR / 'factors.json'
 
-# default startup weights
-DEFAULT = {
-    "player_base_stats": 0.25,
-    "player_tendencies": 0.20,
-    "recent_form":       0.15,
-    "age_regression":    0.05,
-    "home_away_bias":    0.10,
-    "coach_impact":      0.10,
-    "chemistry":         0.05,
-    "random_variance":   0.10
-}
 
-def load():
+def load() -> dict:
+    """
+    Load saved weight factors from the factors.json file.
+    """
     if WEIGHTS_FILE.exists():
-        with open(WEIGHTS_FILE) as f:
+        with open(WEIGHTS_FILE, 'r') as f:
             return json.load(f)
-    return DEFAULT.copy()
+    return {}
 
-def save(w: dict):
-    with open(WEIGHTS_FILE, "w") as f:
-        json.dump(w, f, indent=2)
+
+def get_weights() -> dict:
+    """
+    Alias for load(), return the current weight factors.
+    """
+    return load()
+
+
+def save(factors: dict):
+    """
+    Save weight factors to the factors.json file.
+    """
+    with open(WEIGHTS_FILE, 'w') as f:
+        json.dump(factors, f, indent=2)
