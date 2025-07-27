@@ -19,6 +19,22 @@ team_names = teams_df['team_name'].tolist()
 
 # Home team selection
 home_team = st.sidebar.selectbox("Home Team", team_names, key='home_team')
+# Display home team logo
+home_abbr = teams_df.loc[teams_df['team_name']==home_team, 'team_abbreviation'].iloc[0]
+logo_url = f"https://i.cdn.turner.com/nba/nba/.element/img/4.0/global/logos/512x512/bg.white/svg/{home_abbr}.svg"
+st.sidebar.image(logo_url, width=100)
+
+# Seasons available for home team (dynamic)
+schedule_all = get_team_schedule(home_team)
+home_seasons = sorted(schedule_all['season'].unique().tolist()) if 'season' in schedule_all.columns else []
+season = st.sidebar.selectbox("Season", home_seasons, key='season')
+
+# Away team selection
+away_team = st.sidebar.selectbox("Away Team", [t for t in team_names if t != home_team], key='away_team')
+# Display away team logo
+away_abbr = teams_df.loc[teams_df['team_name']==away_team, 'team_abbreviation'].iloc[0]
+st.sidebar.image(f"https://i.cdn.turner.com/nba/nba/.element/img/4.0/global/logos/512x512/bg.white/svg/{away_abbr}.svg", width=100)
+home_team = st.sidebar.selectbox("Home Team", team_names, key='home_team')
 # Seasons available for home
 home_id = teams_df[teams_df['team_name'] == home_team]['team_id'].iloc[0]
 home_schedule = get_team_schedule(home_team, None) if False else get_team_schedule(home_team, 0)
@@ -50,7 +66,12 @@ away_starters = st.sidebar.multiselect("Away Starters", away_players, default=de
 away_bench = st.sidebar.multiselect("Away Bench", [p for p in away_players if p not in away_starters], default=default_away_bench)
 
 # Simulation control
-if st.sidebar.button("Simulate Game"):
+# Speed control for live simulation (1x default)
+speed = st.sidebar.slider("Simulation Speed (seconds per play)", min_value=0.1, max_value=2.0, value=1.0, step=0.1)
+# Run to end toggle
+run_to_end = st.sidebar.checkbox("Run to End", value=False)
+
+if st.sidebar.button("Simulate Game"):("Simulate Game"):
     # Prepare configuration
     config = {
         'home_team': home_team,
