@@ -6,14 +6,15 @@ from nba_sim.utils.stats_utils import stats_provider
 
 @dataclass
 class Player:
+    """Represents a single NBA player for a given season."""
     name: str
     season: int
 
     def __post_init__(self):
-        # resolve display name → numeric id
+        # Resolve the display name into the NBA Stats person_id
         self.person_id = get_player_id(self.name, self.season)
-        # pull whatever baseline stats you need
+        # Fetch that player’s baseline season stats
         self.stats = stats_provider(self.person_id, self.season)
 
     def __repr__(self):
-        return f"<Player {self.name} ({self.person_id})>"
+        return f"<Player {self.name!r} (ID={self.person_id}, Season={self.season})>"
