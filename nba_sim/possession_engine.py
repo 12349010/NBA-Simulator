@@ -1,60 +1,49 @@
-# nba_sim/possession_engine.py
 import numpy as np
 import pandas as pd
+from typing import Tuple
 
-from nba_sim.data_csv import get_roster, get_team_schedule, iter_play_by_play, _line_score_df
-from nba_sim.player_model import Player
+from nba_sim.data_csv import iter_play_by_play, _line_score_df
+from nba_sim.team_model import Team
 from nba_sim.utils.roster_utils import assign_lineup
 
-def simulate_game(home_team, away_team, season):
+
+def simulate_game(home_team: Team, away_team: Team) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Simulate a single NBA game for two teams in the given season.
+    Simulate a single NBA game between two Team instances.
 
     Args:
-        home_team: Team ID or name for the home team.
-        away_team: Team ID or name for the away team.
-        season: Season end year (e.g., 1996 for 1995-96 season).
+        home_team: Team instance for the home side (team_id, season, roster loaded)
+        away_team: Team instance for the away side
 
     Returns:
-        box_score: DataFrame with columns ['team', 'player_id', 'player_name', 'points', 'rebounds', 'assists']
-        pbp_df: DataFrame of play-by-play events for the game.
+        A tuple of (box_score_df, pbp_df):
+          - box_score_df: pandas DataFrame summarizing final stats per player
+          - pbp_df: pandas DataFrame of the play-by-play event log
     """
-    # Load rosters
-    home_roster_df = get_roster(home_team, season)
-    away_roster_df = get_roster(away_team, season)
+    # Stub for fatigue; replace with real logic if desired
+    def _played_yesterday(team: Team) -> bool:
+        return False
 
-    # Initialize Player objects
-    home_players = [Player(row['player_name'], season) for _, row in home_roster_df.iterrows()]
-    away_players = [Player(row['player_name'], season) for _, row in away_roster_df.iterrows()]
+    # Game identifiers
+    game_id = None  # placeholder: real implementation should derive or generate a unique game_id
+    season = home_team.season
 
-    # Get schedule to find game IDs
-    schedule = get_team_schedule(home_team, season)
-    game_ids = schedule['game_id'].unique() if 'game_id' in schedule.columns else []
+    # Starting lineups based on roster_utils logic
+    home_start = assign_lineup(home_team.roster)
+    away_start = assign_lineup(away_team.roster)
 
     # Collect play-by-play events
-    pbp_events = []
-    for gid in game_ids:
-        try:
-            for ev in iter_play_by_play(gid, season):
-                pbp_events.append(ev)
-        except NotImplementedError:
-            break
-    pbp_df = pd.DataFrame(pbp_events)
+    pbp_records = []
+    for event in iter_play_by_play(game_id=game_id, season=season):
+        pbp_records.append(event)
+    pbp_df = pd.DataFrame(pbp_records)
 
-    # Initialize box score placeholders
-    def _init_box(players, team_label):
-        return pd.DataFrame([
-            {'team': team_label,
-             'player_id': p.id,
-             'player_name': p.name,
-             'points': 0,
-             'rebounds': 0,
-             'assists': 0}
-            for p in players
-        ])
+    # Compute box score by aggregating pbp events
+    # NOTE: this is a placeholder: replace with detailed stat mappings
+    box_score_df = (
+        pbp_df.groupby('player1_id')
+        .size()
+        .reset_index(name='events_count')
+    )
 
-    box_home = _init_box(home_players, 'home')
-    box_away = _init_box(away_players, 'away')
-    box_score = pd.concat([box_home, box_away], ignore_index=True)
-
-    return box_score, pbp_df
+    return box_score_df, pbp_df
