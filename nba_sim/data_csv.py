@@ -1,5 +1,8 @@
+# nba_sim/data_csv.py
 import pandas as pd
+from nba_sim.utils.injury import get_status
 from pathlib import Path
+from typing import Optional
 
 # =============================
 # File and Data Loading
@@ -27,7 +30,7 @@ _player_df = _load_csv('player')  # contains player_id, full_name, from_year, to
 # =============================
 # Constants
 # =============================
-MIN_ROSTER_SIZE = 12
+MIN_ROSTER_SIZE = 12  # threshold to trigger PBP roster inference
 
 # =============================
 # Play-by-Play Stub
@@ -51,14 +54,14 @@ def get_player_id(full_name: str, season: int) -> int:
     matches = df[df['full_name'] == full_name]
     if matches.empty:
         raise KeyError(f"Player '{full_name}' not found in player.csv")
-    # If only one match, return it
     if len(matches) == 1:
         return int(matches.iloc[0]['player_id'])
-    # Otherwise, filter by career range
-    in_season = matches[(matches.get('from_year', 0) <= season) & (matches.get('to_year', season) >= season)]
+    # Filter by career range
+    in_season = matches[(matches.get('from_year', 0) <= season) &
+                        (matches.get('to_year', season) >= season)]
     if len(in_season) == 1:
         return int(in_season.iloc[0]['player_id'])
-    # Fallback: return first
+    # Fallback to first match
     return int(matches.iloc[0]['player_id'])
 
 # =============================
@@ -71,10 +74,10 @@ def _resolve_team_id(team_key) -> int:
     if isinstance(team_key, int):
         return team_key
     df = _team_df
-    # match by full name
+    # Match by full name
     row = df[df['team_name'] == team_key]
     if row.empty:
-        # match by abbreviation
+        # Match by abbreviation
         row = df[df['team_abbreviation'] == team_key]
     if row.empty:
         raise KeyError(f"Team '{team_key}' not found in team.csv")
@@ -83,58 +86,83 @@ def _resolve_team_id(team_key) -> int:
 
 def get_team_list() -> pd.DataFrame:
     """
-    Return a DataFrame of teams with ['team_id','team_name','team_abbreviation'].
+    Return a DataFrame of teams with columns ['team_id','team_name','team_abbreviation'].
     """
     df = _team_df
     cols = [c for c in ['team_id','team_name','team_abbreviation'] if c in df.columns]
     return df[cols].drop_duplicates().reset_index(drop=True)
 
 
-def get_team_schedule(team_key, season: int) -> pd.DataFrame:
+def get_team_schedule(team_key, season: Optional[int] = None) -> pd.DataFrame:
     """
-    Return schedule DataFrame for a given team and season.
-    Accepts team_id or team_name.
+    Return schedule DataFrame for a given team, optionally filtered by season.
+    Accepts team_id (int) or team_name/abbreviation (str).
     """
     tid = _resolve_team_id(team_key)
     df = _game_df.copy()
-    # filter by season
-    season_col = 'season_id' if 'season_id' in df.columns else 'season' if 'season' in df.columns else None
-    if season_col:
-        df = df[df[season_col] == season]
-    # filter by home or away
-    df = df[(df['team_id_home'] == tid) | (df['team_id_visitor'] == tid)]
-    return df.reset_index(drop=True)
+
+    # Apply season filter if provided
+    if season is not None:
+        season_col = (
+            'season_id' if 'season_id' in df.columns else
+            'season'    if 'season'    in df.columns else
+            None
+        )
+        if season_col:
+            df = df[df[season_col] == season]
+
+    # Filter by team involvement
+    schedule = df[(df['team_id_home'] == tid) | (df['team_id_visitor'] == tid)]
+    return schedule.reset_index(drop=True)
 
 # =============================
 # Roster Retrieval
 # =============================
 def get_roster(team_key, season: int) -> pd.DataFrame:
     """
-    Return the active+inactive roster for team and season, with 'player_id' and 'full_name'.
-    Accepts team_id or team_name.
+    Return the combined active and inactive roster for a given team and season,
+    including 'player_id' and 'player_name'.
+    Accepts team_id (int) or team_name/abbreviation (str).
     """
     tid = _resolve_team_id(team_key)
+
+    # Active roster filter
     df_active = _common_player_info_df
+    s_col = (
+        'season_id' if 'season_id' in df_active.columns else
+        'season'    if 'season'    in df_active.columns else
+        None
+    )
+    if s_col:
+        active = df_active[(df_active['team_id'] == tid) & (df_active[s_col] == season)]
+    else:
+        active = df_active[(df_active['team_id'] == tid) &
+                           (df_active.get('from_year', 0) <= season) &
+                           (df_active.get('to_year', season) >= season)]
+
+    # Inactive roster filter
     df_inact = _inactive_players_df
-    # determine season column
-    def _season_col(df):
-        if 'season_id' in df.columns: return 'season_id'
-        if 'season' in df.columns: return 'season'
-        return None
-    s_col_active = _season_col(df_active)
-    if s_col_active:
-        active = df_active[(df_active['team_id']==tid)&(df_active[s_col_active]==season)]
-    else:
-        active = df_active[(df_active['team_id']==tid)&(df_active.get('from_year',0)<=season)&(df_active.get('to_year',season)>=season)]
-    s_col_inact = _season_col(df_inact) or s_col_active
+    s_col_inact = (
+        'season_id' if 'season_id' in df_inact.columns else
+        'season'    if 'season'    in df_inact.columns else
+        s_col
+    )
     if s_col_inact:
-        inactive = df_inact[(df_inact['team_id']==tid)&(df_inact[s_col_inact]==season)]
+        inactive = df_inact[(df_inact['team_id'] == tid) & (df_inact[s_col_inact] == season)]
     else:
-        inactive = df_inact[(df_inact['team_id']==tid)&(df_inact.get('from_year',0)<=season)&(df_inact.get('to_year',season)>=season)]
-    roster = pd.concat([active,inactive],ignore_index=True)
-    roster = roster.drop_duplicates(subset='player_id') if 'player_id' in roster.columns else roster
-    # merge player names
+        inactive = df_inact[(df_inact['team_id'] == tid) &
+                             (df_inact.get('from_year', 0) <= season) &
+                             (df_inact.get('to_year', season) >= season)]
+
+    # Combine and dedupe
+    roster = pd.concat([active, inactive], ignore_index=True)
+    if 'player_id' in roster.columns:
+        roster = roster.drop_duplicates(subset='player_id')
+
+    # Merge player names
     if 'player_id' in roster.columns and 'full_name' in _player_df.columns:
-        roster = pd.merge(roster, _player_df[['player_id','full_name']], on='player_id', how='left')
+        roster = pd.merge(roster, _player_df[['player_id','full_name']],
+                          on='player_id', how='left')
         roster.rename(columns={'full_name':'player_name'}, inplace=True)
+
     return roster.reset_index(drop=True)
