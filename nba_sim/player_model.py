@@ -1,38 +1,19 @@
-from dataclasses import dataclass, field
-from typing import Optional, Dict
+# nba_sim/player_model.py
 
-from nba_sim.utils.stats_utils import stats_provider
+from dataclasses import dataclass
 from nba_sim.data_csv import get_player_id
+from nba_sim.utils.stats_utils import stats_provider
 
 @dataclass
 class Player:
-    """
-    Represents an NBA player in a given season, holding stats and tracking minutes.
-    """
     name: str
     season: int
-    id: int = field(init=False)
-    stats: Dict = field(default_factory=dict)
-    minutes_so_far: int = 0
-    cap: Optional[int] = None  # minutes cap based on injury status or other rules
 
     def __post_init__(self):
-        # Determine the player's unique ID based on name and season
-        self.id = get_player_id(self.name, self.season)
-        # Load base stats for this player-season
-        self.stats = stats_provider(self.id, self.season)
-        # Initialize minutes cap if not set elsewhere (team logic can override)
-        # self.cap should be set by team_model during roster build
-        return
+        # resolve display name → numeric id
+        self.person_id = get_player_id(self.name, self.season)
+        # pull whatever baseline stats you need
+        self.stats = stats_provider(self.person_id, self.season)
 
-    def record_minutes(self, mins: int):
-        """
-        Increment minutes played, useful for rotation logic.
-        """
-        self.minutes_so_far += mins
-
-    def reset_minutes(self):
-        """
-        Reset minutes played to zero.
-        """
-        self.minutes_so_far = 0
+    def __repr__(self):
+        return f"<Player {self.name} ({self.person_id})>"
