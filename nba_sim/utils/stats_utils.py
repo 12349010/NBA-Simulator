@@ -1,7 +1,7 @@
 # nba_sim/utils/stats_utils.py
 
 import pandas as pd
-from nba_sim.data_csv import _pbp_df
+import nba_sim.data_csv as data_csv
 
 class StatsProvider:
     """
@@ -16,8 +16,10 @@ class StatsProvider:
           - 'three_pct': three‑point percentage
           - 'three_prop': proportion of FG attempts that are threes
         """
+        # reference the in‑memory PB‑P DataFrame
+        pbp = data_csv._pbp_df  
+
         # filter to that player and regulation periods
-        pbp = _pbp_df
         sub = pbp[
             (pbp["player1_id"] == player_id)
             & (pbp["period"].between(1, 4))
@@ -25,7 +27,7 @@ class StatsProvider:
 
         # fill NAs so string operations are safe
         home_desc = sub["homedescription"].fillna("")
-        vis_desc = sub["visitordescription"].fillna("")
+        vis_desc  = sub["visitordescription"].fillna("")
 
         made  = (sub["eventmsgtype"] == 1).sum()
         att   = sub["eventmsgtype"].isin([1, 2]).sum()
@@ -41,8 +43,8 @@ class StatsProvider:
         three_prop = att3  / att  if att  > 0 else 0.30
 
         return {
-            "fg_pct": fg_pct,
-            "three_pct": three_pct,
+            "fg_pct":     fg_pct,
+            "three_pct":  three_pct,
             "three_prop": three_prop,
         }
 
@@ -51,9 +53,9 @@ class StatsProvider:
         Returns rebounding rate:
           - 'reb_rate': chance to secure a rebound on any rebound opportunity
         """
-        pbp = _pbp_df
-        sub = pbp[pbp["player1_id"] == player_id]
+        pbp = data_csv._pbp_df
 
+        sub   = pbp[pbp["player1_id"] == player_id]
         rebs  = sub["eventmsgtype"].isin([4, 5]).sum()
         games = sub["game_id"].nunique()
 
@@ -66,5 +68,5 @@ class StatsProvider:
         return {"reb_rate": reb_rate}
 
 
-# Instantiate a single provider for import elsewhere
+# Single instance for import elsewhere
 stats_provider = StatsProvider()
