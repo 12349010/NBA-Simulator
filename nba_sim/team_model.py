@@ -1,55 +1,46 @@
 # nba_sim/team_model.py
-from dataclasses import dataclass, field
-from typing import List, Optional
 
+from typing import List, Optional
 from nba_sim.data_csv import get_roster
 from nba_sim.player_model import Player
-from nba_sim.utils.injury import get_status, minutes_cap
 
-@dataclass
 class Team:
-    """
-    Represents an NBA team for a given season, including its roster of Player objects.
-    """
-    name: str                        # Team name or ID
-    season: int                      # Season end year (e.g., 1996)
-    is_home: bool = False            # True if home team
-    roster_override: Optional[List[str]] = None  # Optional list of player names to use instead of full roster
-    players: List[Player] = field(init=False, default_factory=list)
+    def __init__(
+        self,
+        team_id: int,
+        season: int,
+        starters: Optional[List[str]] = None,
+        bench: Optional[List[str]]   = None,
+    ):
+        self.team_id = team_id
+        self.season  = season
 
-    def __post_init__(self):
-        # Determine roster names
-        if self.roster_override:
-            names = self.roster_override
+        # Fetch the raw roster DataFrame
+        roster_df = get_roster(team_id, season)
+
+        # Grab the list of all display names in roster order
+        all_names = roster_df["display_first_last"].tolist()
+
+        # If the user passed explicit starters / bench, use them;
+        # otherwise fall back to first‑5 / the rest
+        if starters:
+            self.starter_names = starters
         else:
-            roster_df = get_roster(self.name, self.season)
-            if 'player_name' in roster_df.columns:
-                names = roster_df['player_name'].tolist()
-            else:
-                names = roster_df.get('full_name', []).tolist()
+            self.starter_names = all_names[:5]
 
-        # Initialize Player objects and apply minutes cap based on injury status
-        for pname in names:
-            # Determine injury-based cap if possible
-            try:
-                status = get_status(pname)
-                cap = minutes_cap(status)
-            except Exception:
-                cap = None
+        if bench:
+            self.bench_names = bench
+        else:
+            # everything else not in starters
+            self.bench_names = [n for n in all_names if n not in self.starter_names]
 
-            p = Player(pname, self.season)
-            p.cap = cap
-            self.players.append(p)
+        # Instantiate Player objects by display name
+        # (Player[name,season] should internally call get_player_id(name,season))
+        self.starters = [Player(name, season) for name in self.starter_names]
+        self.bench    = [Player(name, season) for name in self.bench_names]
 
-    def pick_lineup(self, n_starters: int = 5):
-        """
-        Select starters and bench from the roster.
+        # Full roster as Player objects
+        self.roster = self.starters + self.bench
 
-        Returns:
-            starters: List[Player] for starting lineup
-            bench: List[Player] for bench rotation
-        """
-        # Simple selection: first n_starters as starters
-        starters = self.players[:n_starters]
-        bench = self.players[n_starters:]
-        return starters, bench
+    def __repr__(self):
+        return f"<Team {self.team_id} ({self.season}) | Starters={self.starter_names}>"
