@@ -139,6 +139,9 @@ def get_roster(team, season):
         _common_player_info_df['person_id'].astype(int).isin(player_ids)
     ].copy()
 
+ # expose the play‐by‐play DataFrame for downstream consumers
+pbp_df = _pbp_df
+
     # drop duplicates if any and return
     roster_df = roster_df.drop_duplicates(subset='person_id')
     return roster_df
