@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from typing import Optional
 
-from nba_sim.main import play_game
+from main import play_game
 from nba_sim.data_csv import get_team_list, get_team_schedule, get_roster
 from nba_sim.utils.injury import get_status
 
