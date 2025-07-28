@@ -7,57 +7,55 @@ Loads all CSV tables under data/, normalizes columns, and exposes API functions:
  - get_roster(team, season)
  - get_player_id(name, season)
  - iter_play_by_play(game_id)
-Also provides internal DataFrames: _team_df, _game_df, _line_score_df, _common_player_info_df, _inactive_players_df, _pbp_df
+Also provides internal DataFrames: _team_df, _game_df, _line_score_df, _common_player_info_df, _inactive_players_df
 """
 import os
 import glob
 import pandas as pd
 
+# Path to data directory
 data_dir = os.path.abspath(
     os.path.join(os.path.dirname(__file__), '..', 'data')
 )
 
-# Load core tables
+# CSV file paths
 _team_csv = os.path.join(data_dir, 'team.csv')
 _game_csv = os.path.join(data_dir, 'game.csv')
 _line_score_csv = os.path.join(data_dir, 'line_score.csv')
 _common_player_info_csv = os.path.join(data_dir, 'common_player_info.csv')
 _inactive_players_csv = os.path.join(data_dir, 'inactive_players.csv')
 
+# Load core tables once
 _team_df = pd.read_csv(_team_csv)
 _game_df = pd.read_csv(_game_csv)
 _line_score_df = pd.read_csv(_line_score_csv)
 _common_player_info_df = pd.read_csv(_common_player_info_csv)
 _inactive_players_df = pd.read_csv(_inactive_players_csv)
 
-# Load all play-by-play gzip files (with low_memory=False to suppress mixed-type warnings)
-_pbp_files = glob.glob(os.path.join(data_dir, 'play_by_play_*.csv.gz'))
-
-# Optional: if you know exact dtypes, define a dict, e.g.:
-# _pbp_dtypes = {
-#     "game_id": str,
-#     "eventnum": int,
-#     "scoremargin": float,
-#     "player1_id": float,  # may come in as float so we cast later
-#     ...
-# }
-
-_pbp_df = pd.concat(
-    (
-        pd.read_csv(
-            f,
-            compression='gzip',
-            low_memory=False,
-            # dtype=_pbp_dtypes
-        )
-        for f in _pbp_files
-    ),
-    ignore_index=True
-)
-
 MIN_ROSTER_SIZE = 8
 
+# Lazy play-by-play loader
+_pbp_df = None
+
+def _load_pbp():
+    global _pbp_df
+    if _pbp_df is None:
+        pbp_files = glob.glob(os.path.join(data_dir, 'play_by_play_*.csv.gz'))
+        # read with low_memory=False to avoid dtype warnings
+        frames = []
+        for f in pbp_files:
+            try:
+                frames.append(pd.read_csv(f, compression='gzip', low_memory=False))
+            except Exception:
+                continue
+        if frames:
+            _pbp_df = pd.concat(frames, ignore_index=True)
+        else:
+            _pbp_df = pd.DataFrame()
+    return _pbp_df
+
 # Helper: resolve team key to team_id
+
 def _resolve_team_key(key):
     # if integer or numeric string
     try:
@@ -77,15 +75,15 @@ def _resolve_team_key(key):
     raise KeyError(f"Unknown team key: {key}")
 
 # Team list
+
 def get_team_list():
-    """Return DataFrame with columns ['team_id','team_name','team_abbreviation'].""" 
+    """Return DataFrame with columns ['team_id','team_name','team_abbreviation']."""
     return _team_df.rename(
-        columns={'id': 'team_id',
-                 'full_name': 'team_name',
-                 'abbreviation': 'team_abbreviation'}
+        columns={'id': 'team_id', 'full_name': 'team_name', 'abbreviation': 'team_abbreviation'}
     )[['team_id', 'team_name', 'team_abbreviation']]
 
 # Schedule
+
 def get_team_schedule(team, season=None):
     """
     Return schedule for a given team (ID, abbreviation, or full name).
@@ -99,6 +97,7 @@ def get_team_schedule(team, season=None):
     return df[mask].copy()
 
 # Player ID lookup
+
 def get_player_id(name, season):
     """
     Return the person_id for a player matching display_first_last in common_player_info,
@@ -106,23 +105,25 @@ def get_player_id(name, season):
     """
     season = int(season)
     df = _common_player_info_df
-    df_season = df[
-        (df['from_year'] <= season) &
-        (df['to_year'] >= season)
-    ]
+    df_season = df[(df['from_year'] <= season) & (df['to_year'] >= season)]
     match = df_season[df_season['display_first_last'] == name]
     if not match.empty:
         return int(match['person_id'].iloc[0])
     raise KeyError(f"Player '{name}' not found for season {season}")
 
 # Play-by-play iterator
+
 def iter_play_by_play(game_id):
     """Yield each play-by-play event dict for the given game_id."""
-    sub = _pbp_df[_pbp_df['game_id'] == game_id]
+    pbp = _load_pbp()
+    if pbp.empty:
+        return
+    sub = pbp[pbp['game_id'] == game_id]
     for _, row in sub.iterrows():
         yield row.to_dict()
 
 # Roster fetch
+
 def get_roster(team, season):
     """
     Return active + inactive roster for a team in a season.
@@ -137,24 +138,20 @@ def get_roster(team, season):
         (_common_player_info_df['from_year'] <= season) &
         (_common_player_info_df['to_year'] >= season)
     ]
-    # Inactive players (per-game listings)
-    inactive = _inactive_players_df[
-        _inactive_players_df['team_id'] == tid
-    ]
+    # Inactive players (game-specific)
+    inactive = _inactive_players_df[_inactive_players_df['team_id'] == tid]
 
     player_ids = set(active['person_id'].astype(int)) | set(inactive['player_id'].astype(int))
 
-    # Fallback via play-by-play
+    # Fallback via play-by-play if too few
     if len(player_ids) < MIN_ROSTER_SIZE:
         sched = get_team_schedule(tid, season)
         for gid in sched['game_id']:
             for ev in iter_play_by_play(gid):
                 pid = ev.get('player1_id')
-                if ev.get('player1_team_id') == tid and pid is not None:
+                if ev.get('player1_team_id') == tid and pid:
                     player_ids.add(int(pid))
 
     # Return DataFrame of matching common player info
-    roster_df = _common_player_info_df[
-        _common_player_info_df['person_id'].isin(player_ids)
-    ].copy()
+    roster_df = _common_player_info_df[_common_player_info_df['person_id'].isin(player_ids)].copy()
     return roster_df
