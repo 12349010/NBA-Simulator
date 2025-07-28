@@ -1,70 +1,70 @@
-import sqlite3
+# nba_sim/utils/stats_utils.py
+
 import pandas as pd
-from pathlib import Path
+from nba_sim.data_csv import _pbp_df
 
 class StatsProvider:
     """
-    Provides historical statistics for NBA players from the SQLite DB.
+    Provides synthetic shooting & rebounding rates for NBA players
+    by aggregating the in‑memory play‑by‑play DataFrame.
     """
-
-    def __init__(self, db_path: Path):
-        self.db_path = db_path
-
-    def _connect(self):
-        return sqlite3.connect(self.db_path)
 
     def get_player_shooting(self, player_id: int, season: int) -> dict:
         """
         Returns a dict with:
-          - 'fg_pct': field goal percentage
-          - 'three_pct': three-point percentage
-          - 'three_prop': proportion of attempts that are threes
+          - 'fg_pct':   field goal percentage
+          - 'three_pct': three‑point percentage
+          - 'three_prop': proportion of FG attempts that are threes
         """
-        con = self._connect()
-        query = '''
-        SELECT
-          SUM(CASE WHEN eventmsgtype=1 THEN 1 ELSE 0 END)          AS made,
-          SUM(CASE WHEN eventmsgtype IN (1,2) THEN 1 ELSE 0 END)   AS att,
-          SUM(CASE WHEN eventmsgtype=1 AND (homedescription LIKE '%3PT%' OR visitordescription LIKE '%3PT%') THEN 1 ELSE 0 END) AS made3,
-          SUM(CASE WHEN eventmsgtype IN (1,2) AND (homedescription LIKE '%3PT%' OR visitordescription LIKE '%3PT%') THEN 1 ELSE 0 END) AS att3
-        FROM play_by_play
-        WHERE player1_id = ? AND period BETWEEN 1 AND 4
-        '''
-        df = pd.read_sql(query, con, params=(player_id,))
-        con.close()
+        # filter to that player and regulation periods
+        pbp = _pbp_df
+        sub = pbp[
+            (pbp["player1_id"] == player_id)
+            & (pbp["period"].between(1, 4))
+        ]
 
-        row = df.iloc[0]
-        made, att, made3, att3 = row['made'], row['att'], row['made3'], row['att3']
-        fg_pct     = made / att  if att  > 0 else 0.45
+        # fill NAs so string operations are safe
+        home_desc = sub["homedescription"].fillna("")
+        vis_desc = sub["visitordescription"].fillna("")
+
+        made  = (sub["eventmsgtype"] == 1).sum()
+        att   = sub["eventmsgtype"].isin([1, 2]).sum()
+        mask3 = sub["eventmsgtype"].isin([1, 2]) & (
+            home_desc.str.contains("3PT") | vis_desc.str.contains("3PT")
+        )
+        made3 = ((sub["eventmsgtype"] == 1) & mask3).sum()
+        att3  = mask3.sum()
+
+        # avoid division by zero with league‑average fallbacks
+        fg_pct     = made  / att  if att  > 0 else 0.45
         three_pct  = made3 / att3 if att3 > 0 else 0.35
         three_prop = att3  / att  if att  > 0 else 0.30
-        return {'fg_pct': fg_pct, 'three_pct': three_pct, 'three_prop': three_prop}
+
+        return {
+            "fg_pct": fg_pct,
+            "three_pct": three_pct,
+            "three_prop": three_prop,
+        }
 
     def get_player_rebounding(self, player_id: int, season: int) -> dict:
         """
-        Returns rebounding rates:
+        Returns rebounding rate:
           - 'reb_rate': chance to secure a rebound on any rebound opportunity
         """
-        con = self._connect()
-        query = '''
-        SELECT 
-          SUM(CASE WHEN eventmsgtype IN (4,5) THEN 1 ELSE 0 END) AS rebs,
-          COUNT(DISTINCT game_id)                                  AS games
-        FROM play_by_play
-        WHERE player1_id = ?
-        '''
-        df = pd.read_sql(query, con, params=(player_id,))
-        con.close()
+        pbp = _pbp_df
+        sub = pbp[pbp["player1_id"] == player_id]
 
-        row = df.iloc[0]
-        rebs, games = row['rebs'], row['games']
+        rebs  = sub["eventmsgtype"].isin([4, 5]).sum()
+        games = sub["game_id"].nunique()
+
         if games > 0:
-            # rough approximation: assume ~100 rebound chances per game
+            # assume ~100 rebound opportunities per game
             reb_rate = min(1.0, (rebs / games) / 100)
         else:
             reb_rate = 0.15
-        return {'reb_rate': reb_rate}
+
+        return {"reb_rate": reb_rate}
+
 
 # Instantiate a single provider for import elsewhere
-DB_PATH = Path(__file__).parent.parent / 'data' / 'nba.sqlite'
-stats_provider = StatsProvider(DB_PATH)
+stats_provider = StatsProvider()
