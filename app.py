@@ -1,123 +1,82 @@
 import streamlit as st
 import pandas as pd
-from typing import Optional
 
+from nba_sim.data_csv import get_team_list, get_roster
 from nba_sim.main import play_game
-from nba_sim.data_csv import get_team_list, get_team_schedule, get_roster
-from nba_sim.utils.injury import get_status
 
-# Page configuration
-st.set_page_config(page_title="NBA Simulator", layout="wide")
+# Page configuration for wide layout
+st.set_page_config(layout="wide")
 st.title("NBA Game Simulator")
+
+# Load teams and build options dict
+teams_df = get_team_list()
+team_options = {row.team_name: row.team_id for row in teams_df.itertuples()}
 
 # Sidebar: Team & Season Selection
 st.sidebar.header("Select Teams & Season")
-teams_df = get_team_list()
-team_names = teams_df['team_name'].tolist()
+home_name = st.sidebar.selectbox("Home Team", list(team_options.keys()))
+away_name = st.sidebar.selectbox(
+    "Away Team", list(team_options.keys()),
+    index=min(1, len(team_options)-1)
+)
+season = st.sidebar.selectbox(
+    "Season",
+    [str(y) for y in range(2025, 1999, -1)]
+)
 
-# Home team selection
-home_team = st.sidebar.selectbox("Home Team", team_names)
-home_abbr = teams_df.loc[teams_df['team_name'] == home_team, 'team_abbreviation'].iloc[0]
-st.sidebar.image(f"https://i.cdn.turner.com/nba/nba/.element/img/4.0/global/logos/512x512/bg.white/svg/{home_abbr}.svg", width=80)
+# Fetch team IDs and season as int
+home_id = team_options[home_name]
+away_id = team_options[away_name]
+season_int = int(season)
 
-# Seasons available for home team
-schedule_all = get_team_schedule(home_team, season=None)
-home_seasons = sorted(schedule_all['season'].dropna().unique().tolist()) if 'season' in schedule_all.columns else []
-season = st.sidebar.selectbox("Season", home_seasons)
+# Load rosters
+home_roster_df = get_roster(home_id, season_int)
+away_roster_df = get_roster(away_id, season_int)
 
-# Away team selection
-away_team = st.sidebar.selectbox("Away Team", [t for t in team_names if t != home_team])
-away_abbr = teams_df.loc[teams_df['team_name'] == away_team, 'team_abbreviation'].iloc[0]
-st.sidebar.image(f"https://i.cdn.turner.com/nba/nba/.element/img/4.0/global/logos/512x512/bg.white/svg/{away_abbr}.svg", width=80)
+# Roster selectors default to first five players
+home_players = st.sidebar.multiselect(
+    "Home Starters", home_roster_df.display_first_last.tolist(),
+    default=home_roster_df.display_first_last.tolist()[:5]
+)
+away_players = st.sidebar.multiselect(
+    "Away Starters", away_roster_df.display_first_last.tolist(),
+    default=away_roster_df.display_first_last.tolist()[:5]
+)
 
-# Roster & Injuries
-st.sidebar.header("Rosters & Injury Status")
-home_roster_df = get_roster(home_team, season)
-home_players = home_roster_df['player_name'].tolist()
-away_roster_df = get_roster(away_team, season)
-away_players = away_roster_df['player_name'].tolist()
+# Simulation speed control
+speed = st.sidebar.slider(
+    "Simulation Speed (seconds per event)",
+    min_value=0.1, max_value=2.0, value=1.0, step=0.1
+)
 
-st.sidebar.subheader("Home Injury Status")
-for p in home_players:
-    status = get_status(p)
-    if status.lower() not in ['healthy', 'active']:
-        st.sidebar.write(f"{p}: {status}")
+# Simulate button
+simulate = st.sidebar.button("Simulate Game")
 
-st.sidebar.subheader("Away Injury Status")
-for p in away_players:
-    status = get_status(p)
-    if status.lower() not in ['healthy', 'active']:
-        st.sidebar.write(f"{p}: {status}")
+# Main layout: side-by-side team columns
+col1, col2 = st.columns(2)
 
-# Roster customization
-default_home_starters = home_players[:5]
-default_home_bench = home_players[5:]
-default_away_starters = away_players[:5]
-default_away_bench = away_players[5:]
+with col1:
+    # Home team logo and starters
+    home_logo_url = f"https://cdn.nba.com/logos/nba/{home_id}/primary/L/logo.svg"
+    st.image(home_logo_url, width=120)
+    st.subheader(f"{home_name} Starters")
+    for player in home_players:
+        st.write(f"• {player}")
 
-home_starters = st.sidebar.multiselect("Home Starters", home_players, default=default_home_starters)
-home_bench = st.sidebar.multiselect("Home Bench", [p for p in home_players if p not in home_starters], default=default_home_bench)
-away_starters = st.sidebar.multiselect("Away Starters", away_players, default=default_away_starters)
-away_bench = st.sidebar.multiselect("Away Bench", [p for p in away_players if p not in away_starters], default=default_away_bench)
+with col2:
+    # Away team logo and starters
+    away_logo_url = f"https://cdn.nba.com/logos/nba/{away_id}/primary/L/logo.svg"
+    st.image(away_logo_url, width=120)
+    st.subheader(f"{away_name} Starters")
+    for player in away_players:
+        st.write(f"• {player}")
 
-# Simulation controls
-st.sidebar.header("Simulation Controls")
-speed = st.sidebar.slider("Speed (secs per play)", 0.1, 2.0, 1.0, 0.1)
-run_to_end = st.sidebar.checkbox("Run to End", value=False)
-
-# Run simulation
-if st.sidebar.button("Simulate Game"):
-    config = {
-        'home_team': home_team,
-        'away_team': away_team,
-        'season': season,
-        'home_roster': home_starters + home_bench,
-        'away_roster': away_starters + away_bench
-    }
-    results = play_game(config)
-    box_df = results['box_score'].copy()
-    pbp_df = results['pbp']
-
-    # Handle missing PBP
-    if pbp_df.empty:
-        st.warning("No play-by-play data available; displaying box score only.")
-        st.subheader("Box Score")
-        st.dataframe(box_df)
-        st.stop()
-
-    # Live update placeholders
-    score_ph = st.empty()
-    box_ph = st.empty()
-    pbp_ph = st.empty()
-
-    play_texts = []
-    for _, ev in pbp_df.iterrows():
-        desc = ev.get('description', str(ev.to_dict()))
-        play_texts.append(desc)
-
-        # Update box score
-        pts = ev.get('points', 0)
-        pid = ev.get('player1_id')
-        team_id = ev.get('team_id')
-        home_id = teams_df.loc[teams_df['team_name'] == home_team, 'team_id'].iloc[0]
-        label = 'home' if team_id == home_id else 'away'
-        if pts and pid:
-            mask = (box_df['team'] == label) & (box_df['player_id'] == pid)
-            box_df.loc[mask, 'points'] += pts
-
-        # Current score
-        h_score = box_df[box_df['team']=='home']['points'].sum()
-        a_score = box_df[box_df['team']=='away']['points'].sum()
-
-        score_ph.markdown(f"**Score: Home {h_score} - {a_score} Away**")
-        box_ph.dataframe(box_df)
-        pbp_ph.write("\n".join(play_texts[-10:]))
-
-        if not run_to_end:
-            st.sleep(speed)
-
-    st.markdown("---")
+# Run simulation and display results
+if simulate:
+    box_score_df, pbp_df = play_game(
+        home_name, away_name, season_int,
+        home_players, away_players, speed=speed
+    )
     st.subheader("Final Box Score")
-    st.dataframe(box_df)
-    st.subheader("Full Play-by-Play Log")
-    st.dataframe(pbp_df)
+    st.dataframe(box_score_df)
+    # TODO: integrate play-by-play display when available
