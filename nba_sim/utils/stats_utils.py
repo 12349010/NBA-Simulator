@@ -4,10 +4,11 @@ import pandas as pd
 import nba_sim.data_csv as data_csv
 
 class StatsProvider:
-    """
-    Provides synthetic shooting & rebounding rates for NBA players
-    by aggregating the in‑memory play‑by‑play DataFrame.
-    """
+    def get_player_shooting(self, player_id: int, season: int) -> dict:
+        pbp = data_csv.pbp_df   # was _pbp_df
+        # … rest unchanged …
+
+    def get_player_rebounding(self, player_id: int, season
 
     def get_player_shooting(self, player_id: int, season: int) -> dict:
         """
