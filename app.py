@@ -24,15 +24,27 @@ season = st.sidebar.number_input(
     "Season (e.g. 1996)", min_value=1946, max_value=2025, value=2021, step=1
 )
 
+# — Team Logos —
+def _logo_url(abbr: str) -> str:
+    # ESPN-hosted logos, 500×500 PNG
+    return f"https://a.espncdn.com/i/teamlogos/nba/500/{abbr.lower()}.png"
+
+home_abbr = teams_df.loc[teams_df.team_name == home_team, "team_abbreviation"].iloc[0]
+away_abbr = teams_df.loc[teams_df.team_name == away_team, "team_abbreviation"].iloc[0]
+
+col1, col2 = st.sidebar.columns(2)
+with col1:
+    st.image(_logo_url(home_abbr), width=80, caption="Home")
+with col2:
+    st.image(_logo_url(away_abbr), width=80, caption="Away")
+
 st.sidebar.markdown("---")
-st.sidebar.header("Select Rosters (future use)")
-# we load full roster now, even though Team doesn't yet accept custom lineups
+st.sidebar.header("Select Rosters (WIP)")
 home_roster = get_roster(home_team, season)
 away_roster = get_roster(away_team, season)
 player_names_home = home_roster["display_first_last"].tolist()
 player_names_away = away_roster["display_first_last"].tolist()
 
-# just show selectors for later wiring
 home_start = st.sidebar.multiselect("Home Starters (5)", player_names_home, default=player_names_home[:5])
 home_bench = st.sidebar.multiselect("Home Bench", player_names_home, default=player_names_home[5:12])
 
@@ -41,7 +53,7 @@ away_bench = st.sidebar.multiselect("Away Bench", player_names_away, default=pla
 
 st.sidebar.markdown("*(Roster injection coming soon)*")
 
-
+# — Run Simulation —
 def run_sim():
     # look up numeric IDs
     home_id = teams_df.loc[teams_df.team_name == home_team, "team_id"].iloc[0]
@@ -69,7 +81,7 @@ def run_sim():
             f"**Score: {home_team} {home_pts} – {away_team} {away_pts}**"
         )
         live.write(f"{ev.get('time','')} — {ev.get('desc','')}")
-        # st.sleep(0.1)  # uncomment to throttle pacing
+        # st.sleep(0.1)  # throttle speed via a sidebar slider if you add one
 
     st.success("🏁 End of Simulation")
 
