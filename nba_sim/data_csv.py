@@ -1,14 +1,3 @@
-# File: nba_sim/data_csv.py
-"""
-Core CSV-based data layer for NBA Simulator.
-Loads all CSV tables under data/, normalizes columns, and exposes API functions:
- - get_team_list()
- - get_team_schedule(team, season=None)
- - get_roster(team, season)
- - get_player_id(name, season)
- - iter_play_by_play(game_id)
-Also provides internal DataFrames: _team_df, _game_df, _line_score_df, _common_player_info_df, _inactive_players_df, _pbp_df
-"""
 import os
 import glob
 import pandas as pd
@@ -30,14 +19,13 @@ _line_score_df = pd.read_csv(_line_score_csv)
 _common_player_info_df = pd.read_csv(_common_player_info_csv)
 _inactive_players_df = pd.read_csv(_inactive_players_csv)
 
-# Load all play-by-play gzip files
+# Load all play-by-play gzip files with low_memory to suppress dtype warnings
 _pbp_files = glob.glob(os.path.join(data_dir, 'play_by_play_*.csv.gz'))
 _pbp_df = pd.concat(
     (pd.read_csv(f, compression='gzip', low_memory=False) for f in _pbp_files),
     ignore_index=True
 )
-
-# Expose play-by-play for external use
+# Expose for in-memory access
 pbp_df = _pbp_df
 
 MIN_ROSTER_SIZE = 8
@@ -45,15 +33,18 @@ MIN_ROSTER_SIZE = 8
 # Helper: resolve team key to team_id
 
 def _resolve_team_key(key):
+    # if integer or numeric string
     try:
         tid = int(key)
         if tid in _team_df['id'].values:
             return tid
     except Exception:
         pass
+    # match by abbreviation
     match = _team_df[_team_df['abbreviation'] == str(key)]
     if not match.empty:
         return int(match['id'].iloc[0])
+    # match by full name
     match = _team_df[_team_df['full_name'] == str(key)]
     if not match.empty:
         return int(match['id'].iloc[0])
@@ -62,6 +53,7 @@ def _resolve_team_key(key):
 # Team list
 
 def get_team_list():
+    """Return DataFrame with columns ['team_id','team_name','team_abbreviation']."""
     return _team_df.rename(
         columns={'id': 'team_id', 'full_name': 'team_name', 'abbreviation': 'team_abbreviation'}
     )[['team_id', 'team_name', 'team_abbreviation']]
@@ -69,6 +61,10 @@ def get_team_list():
 # Schedule
 
 def get_team_schedule(team, season=None):
+    """
+    Return schedule for a given team (ID, abbreviation, or full name).
+    If season is None, returns all seasons; else filters on season_id.
+    """
     tid = _resolve_team_key(team)
     df = _game_df
     if season is not None:
@@ -79,6 +75,10 @@ def get_team_schedule(team, season=None):
 # Player ID lookup
 
 def get_player_id(name, season):
+    """
+    Return the person_id for a player matching display_first_last in common_player_info,
+    filtering by career span containing season.
+    """
     season = int(season)
     df = _common_player_info_df
     df_season = df[(df['from_year'] <= season) & (df['to_year'] >= season)]
@@ -90,6 +90,7 @@ def get_player_id(name, season):
 # Play-by-play iterator
 
 def iter_play_by_play(game_id):
+    """Yield each play-by-play event dict for the given game_id."""
     sub = _pbp_df[_pbp_df['game_id'] == game_id]
     for _, row in sub.iterrows():
         yield row.to_dict()
@@ -97,18 +98,25 @@ def iter_play_by_play(game_id):
 # Roster fetch
 
 def get_roster(team, season):
+    """
+    Return active + inactive roster for a team in a season.
+    Falls back to play-by-play inference if below MIN_ROSTER_SIZE.
+    """
     tid = _resolve_team_key(team)
     season = int(season)
 
+    # Active players by career span
     active = _common_player_info_df[
-        (_common_player_info_df['team_id'] == tid) &
-        (_common_player_info_df['from_year'] <= season) &
-        (_common_player_info_df['to_year'] >= season)
+        ( _common_player_info_df['team_id'] == tid ) &
+        ( _common_player_info_df['from_year'] <= season ) &
+        ( _common_player_info_df['to_year'] >= season )
     ]
+    # Inactive players (no span, just game entries)
     inactive = _inactive_players_df[_inactive_players_df['team_id'] == tid]
 
     player_ids = set(active['person_id'].astype(int)) | set(inactive['player_id'].astype(int))
 
+    # Fallback via play-by-play
     if len(player_ids) < MIN_ROSTER_SIZE:
         sched = get_team_schedule(tid, season)
         for gid in sched['game_id']:
@@ -119,3 +127,6 @@ def get_roster(team, season):
 
     roster_df = _common_player_info_df[_common_player_info_df['person_id'].isin(player_ids)].copy()
     return roster_df
+
+# Alias for compatibility
+get_common_roster = get_roster
