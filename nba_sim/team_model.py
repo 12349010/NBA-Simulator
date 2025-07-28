@@ -3,44 +3,44 @@
 from typing import List, Optional
 from nba_sim.data_csv import get_roster
 from nba_sim.player_model import Player
+from nba_sim.utils.roster_utils import assign_lineup
 
 class Team:
+    """
+    Represents an NBA team in a given season, with a roster broken into starters and bench.
+    You can pass in explicit `starters` and `bench` lists of player display names,
+    or omit them to have them selected automatically.
+    """
     def __init__(
         self,
         team_id: int,
         season: int,
+        *,
         starters: Optional[List[str]] = None,
-        bench: Optional[List[str]]   = None,
+        bench: Optional[List[str]] = None,
     ):
         self.team_id = team_id
-        self.season  = season
+        self.season = season
 
-        # Fetch the raw roster DataFrame
+        # Load the raw roster info and build Player objects
         roster_df = get_roster(team_id, season)
+        # display_first_last is the column containing full names
+        self.roster = [
+            Player(row["display_first_last"], season)
+            for _, row in roster_df.iterrows()
+        ]
 
-        # Grab the list of all display names in roster order
-        all_names = roster_df["display_first_last"].tolist()
-
-        # If the user passed explicit starters / bench, use them;
-        # otherwise fall back to first‑5 / the rest
-        if starters:
-            self.starter_names = starters
+        # If the user provided exact starters/bench, slice them out
+        if starters is not None and bench is not None:
+            name_to_player = {p.name: p for p in self.roster}
+            self.starters = [name_to_player[n] for n in starters if n in name_to_player]
+            self.bench    = [name_to_player[n] for n in bench    if n in name_to_player]
         else:
-            self.starter_names = all_names[:5]
-
-        if bench:
-            self.bench_names = bench
-        else:
-            # everything else not in starters
-            self.bench_names = [n for n in all_names if n not in self.starter_names]
-
-        # Instantiate Player objects by display name
-        # (Player[name,season] should internally call get_player_id(name,season))
-        self.starters = [Player(name, season) for name in self.starter_names]
-        self.bench    = [Player(name, season) for name in self.bench_names]
-
-        # Full roster as Player objects
-        self.roster = self.starters + self.bench
+            # Otherwise, auto‑assign a starting five and bench via utility
+            self.starters, self.bench = assign_lineup(self.roster)
 
     def __repr__(self):
-        return f"<Team {self.team_id} ({self.season}) | Starters={self.starter_names}>"
+        return (
+            f"<Team id={self.team_id!r} season={self.season!r} "
+            f"starters={[p.name for p in self.starters]!r}>"
+        )
