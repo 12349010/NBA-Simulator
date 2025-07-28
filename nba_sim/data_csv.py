@@ -32,11 +32,13 @@ _common_player_info_df= pd.read_csv(_common_player_csv)
 _inactive_players_df  = pd.read_csv(_inactive_players_csv)
 
 # load all play‑by‑play gzip files, suppress mixed‑type warnings
-_pbp_files = glob.glob(os.path.join(data_dir, 'play_by_play_*.csv.gz'))
-_pbp_df = pd.concat(
-    (pd.read_csv(f, compression='gzip', low_memory=False) for f in _pbp_files),
-    ignore_index=True
-)
+def iter_play_by_play(game_id):
+    """Yield each play-by-play event dict for the given game_id, reading files in chunks."""
+    for fpath in _pbp_files:
+        for chunk in pd.read_csv(fpath, compression='gzip', chunksize=100_000):
+            sub = chunk[chunk['game_id'] == game_id]
+            for _, row in sub.iterrows():
+                yield row.to_dict()
 
 MIN_ROSTER_SIZE = 8
 
