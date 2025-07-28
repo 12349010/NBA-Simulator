@@ -60,8 +60,14 @@ def run_sim():
     away_id = teams_df.loc[teams_df.team_name == away_team, "team_id"].iloc[0]
 
     # instantiate Team objects (just id + season for now)
-    home_obj = Team(home_id, season)
-    away_obj = Team(away_id, season)
+        home_obj = Team(home_id, season,
+                        starters=home_start,
+                        bench=   home_bench)
+        
+        away_obj = Team(away_id, season,
+                        starters=away_start,
+                        bench=   away_bench)
+
 
     # run the simulation
     events = simulate_game(home_obj, away_obj)
